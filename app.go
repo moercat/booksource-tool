@@ -16,6 +16,7 @@ import (
 )
 
 func run(cfg Config) error {
+	setDefaultSearchKeywords(cfg.SearchKeywords)
 	if cfg.WatchDir != "" {
 		return runWatch(cfg)
 	}
@@ -92,6 +93,7 @@ func runSchedulerCycle(ctx context.Context, cfg Config, pool *SourcePool, nextRe
 	usablePath := filepath.Join(cfg.OutputDir, "usable_dedup_sources.json")
 	duplicatePath := filepath.Join(cfg.OutputDir, "duplicate_report.json")
 	connectivityPath := filepath.Join(cfg.OutputDir, "connectivity_report.json")
+	appUsabilityPath := filepath.Join(cfg.OutputDir, "app_usability_report.json")
 	summaryPath := filepath.Join(cfg.OutputDir, "summary.json")
 	usable := pool.UsableSources()
 	outputHash, usableJSON, err := stableJSONHash(usable)
@@ -109,11 +111,20 @@ func runSchedulerCycle(ctx context.Context, cfg Config, pool *SourcePool, nextRe
 	if err := writeJSON(connectivityPath, probeValues); err != nil {
 		return err
 	}
+	appUsabilityItems := []AppUsabilityReportItem{}
+	for _, entry := range pool.Entries {
+		if entry.Status == SourceStatusUsable && !shouldExcludeBookSource(entry.Source) {
+			appUsabilityItems = append(appUsabilityItems, appUsabilityItem(cleanBookSourceName(entry.Source), entry.LastProbe, true))
+		}
+	}
+	if err := writeJSON(appUsabilityPath, buildAppUsabilityReport(appUsabilityItems)); err != nil {
+		return err
+	}
 	duplicates := poolDuplicateGroups()
 	if err := writeJSON(duplicatePath, duplicates); err != nil {
 		return err
 	}
-	summary := pool.Summary(outputHash, map[string]string{"usable": usablePath, "duplicates": duplicatePath, "connectivity": connectivityPath, "summary": summaryPath})
+	summary := pool.Summary(outputHash, map[string]string{"usable": usablePath, "duplicates": duplicatePath, "connectivity": connectivityPath, "appUsability": appUsabilityPath, "summary": summaryPath})
 	if err := writeJSON(summaryPath, summary); err != nil {
 		return err
 	}
@@ -159,6 +170,11 @@ func runOnce(cfg Config) error {
 	groups := map[string][]BookSource{}
 	invalid := 0
 	for _, source := range sources {
+		if shouldExcludeBookSource(source) {
+			invalid++
+			continue
+		}
+		source = cleanBookSourceName(source)
 		structuralTarget := StructuralProbeTargetFromBookSource(source)
 		probeTarget := ProbeTargetFromBookSource(source)
 		key := NormalizeProbeTarget(structuralTarget)
@@ -177,6 +193,7 @@ func runOnce(cfg Config) error {
 	probeResults := ProbeAllJobs(probeJobs, cfg.Workers, cfg.Timeout, cfg.Retries, cfg.RetryDelay)
 
 	usable := []BookSource{}
+	appUsabilityItems := []AppUsabilityReportItem{}
 	duplicates := []DuplicateGroup{}
 	extraDuplicates := 0
 	for key, items := range groups {
@@ -185,7 +202,9 @@ func runOnce(cfg Config) error {
 			duplicates = append(duplicates, DuplicateGroup{NormalizedURL: key, Count: len(items), Names: namesOf(items), RawURLs: rawURLsOf(items)})
 		}
 		if probeResults[key].OK {
-			usable = append(usable, cleanBookSourceName(chooseRepresentative(items)))
+			representative := chooseRepresentative(items)
+			usable = append(usable, cleanBookSourceName(representative))
+			appUsabilityItems = append(appUsabilityItems, appUsabilityItem(representative, probeResults[key], true))
 		}
 	}
 	sort.Slice(duplicates, func(i, j int) bool { return duplicates[i].Count > duplicates[j].Count })
@@ -196,6 +215,7 @@ func runOnce(cfg Config) error {
 	usablePath := filepath.Join(cfg.OutputDir, "usable_dedup_sources.json")
 	duplicatePath := filepath.Join(cfg.OutputDir, "duplicate_report.json")
 	connectivityPath := filepath.Join(cfg.OutputDir, "connectivity_report.json")
+	appUsabilityPath := filepath.Join(cfg.OutputDir, "app_usability_report.json")
 	summaryPath := filepath.Join(cfg.OutputDir, "summary.json")
 	if err := writeJSON(usablePath, usable); err != nil {
 		return err
@@ -204,6 +224,9 @@ func runOnce(cfg Config) error {
 		return err
 	}
 	if err := writeJSON(connectivityPath, values(probeResults)); err != nil {
+		return err
+	}
+	if err := writeJSON(appUsabilityPath, buildAppUsabilityReport(appUsabilityItems)); err != nil {
 		return err
 	}
 
@@ -218,7 +241,7 @@ func runOnce(cfg Config) error {
 		FailedUniqueURLs:      len(groups) - len(usable),
 		StatusCounts:          statusCounts(probeResults),
 		ErrorCounts:           errorCounts(probeResults),
-		Outputs:               map[string]string{"usable": usablePath, "duplicates": duplicatePath, "connectivity": connectivityPath, "summary": summaryPath},
+		Outputs:               map[string]string{"usable": usablePath, "duplicates": duplicatePath, "connectivity": connectivityPath, "appUsability": appUsabilityPath, "summary": summaryPath},
 		UpdatedAt:             time.Now().Unix(),
 	}
 	if err := writeJSON(summaryPath, summary); err != nil {
@@ -243,6 +266,10 @@ func uniqueBookSources(sources []BookSource) []BookSource {
 	seen := map[string]bool{}
 	out := make([]BookSource, 0, len(sources))
 	for _, source := range sources {
+		if shouldExcludeBookSource(source) {
+			continue
+		}
+		source = cleanBookSourceName(source)
 		key := sha1Hex(stringField(source, "bookSourceUrl") + "\x00" + stringField(source, "searchUrl") + "\x00" + stringField(source, "bookSourceName"))
 		if seen[key] {
 			continue
