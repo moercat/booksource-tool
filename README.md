@@ -4,8 +4,8 @@ Legado 书源清理发布服务。推荐部署方式：腾讯云常驻运行项�
 
 1. 从监听目录、本地文件、HTTP URL 或 Git 仓库拉取书源 JSON。
 2. 按规范化后的搜索探测链接去重，`searchUrl` 相同会归为同一书源。
-3. 优先对每个唯一书源的 `searchUrl` 做轻量连通性探测。
-4. 清洗书源名称，输出去重后、搜索链接返回 HTTP 200 的书源 JSON。
+3. 优先对每个唯一书源的 `searchUrl` 做搜索响应可信度探测。
+4. 清洗书源名称，输出去重后、搜索响应可信的书源 JSON。
 5. 本地 output 变化后由腾讯云 systemd timer 按 hash 判断同步到阿里云 filedown，供阅读 App 网络导入。
 
 ## 一次性使用
@@ -121,5 +121,7 @@ http://8.135.16.113/var/legado-usable-book-sources.json
 - 原始 `bookSourceUrl` 不同不代表不同源；工具会构造 `searchUrl` 搜索请求，并按结构化搜索请求去重。
 - 必须能构造出可直接 HTTP 探测的 `searchUrl`；`@js`、`webView` 或仍包含未解析 `{{...}}` 的复杂模板会剔除，不用 `bookSourceUrl` 假阳性兜底。
 - GET 搜索请求会先尝试 HEAD；如果 HEAD 非 200，会继续用 GET 复核，不会因为 HEAD 不支持就误杀。
-- 只有 HTTP `200` 视为可用；403/404/5xx 等非 200 都会剔除，但会按 `--retries` 重试。
-- 这里只判断“搜索链接是否返回 200”，不判断 Legado 搜索规则是否一定正确。
+- HTTP `200` 只是基础条件；响应体必须非空，且不能命中验证码、风控、Cloudflare、安全验证等明显异常页。
+- 会参考 Legado 的搜索规则思路，尽量用 `ruleSearch.bookList/name/bookUrl/checkKeyWord` 对 JSON/HTML 响应做轻量可信度判断。
+- 当前不是完整 Legado runtime：`@js`、复杂 XPath、Java/Rhino 脚本和 WebView 规则仍会降级或剔除。
+- 探测结果会记录 `validationLevel`、`validationGrade` 和 `validationNotes`，用于后续可用源分级。
