@@ -54,6 +54,10 @@ func (pool *SourcePool) MergeSources(sources []BookSource, origin string, now ti
 }
 
 func (pool *SourcePool) AddOrUpdate(source BookSource, origin string, now time.Time) bool {
+	if shouldExcludeBookSource(source) {
+		return false
+	}
+	source = cleanBookSourceName(source)
 	structuralTarget := StructuralProbeTargetFromBookSource(source)
 	probeTarget := ProbeTargetFromBookSource(source)
 	key := NormalizeProbeTarget(structuralTarget)
@@ -81,13 +85,27 @@ func (pool *SourcePool) AddOrUpdate(source BookSource, origin string, now time.T
 }
 
 func (pool *SourcePool) DueJobs(now time.Time) map[string]ProbeJob {
-	due := map[string]ProbeJob{}
+	dueEntries := []*PoolEntry{}
 	nowUnix := now.Unix()
-	for key, entry := range pool.Entries {
+	for _, entry := range pool.Entries {
 		if entry.Status == SourceStatusDisabled || entry.NextProbeAt == 0 || entry.NextProbeAt > nowUnix {
 			continue
 		}
-		due[key] = ProbeJob{Target: entry.ProbeTarget, Source: entry.Source}
+		dueEntries = append(dueEntries, entry)
+	}
+	sort.Slice(dueEntries, func(i, j int) bool {
+		if dueEntries[i].NextProbeAt != dueEntries[j].NextProbeAt {
+			return dueEntries[i].NextProbeAt < dueEntries[j].NextProbeAt
+		}
+		return dueEntries[i].Key < dueEntries[j].Key
+	})
+	limit := pool.Config.MaxProbeJobsPerCycle
+	if limit <= 0 || limit > len(dueEntries) {
+		limit = len(dueEntries)
+	}
+	due := map[string]ProbeJob{}
+	for _, entry := range dueEntries[:limit] {
+		due[entry.Key] = ProbeJob{Target: entry.ProbeTarget, Source: entry.Source, Previous: entry.LastProbe}
 	}
 	return due
 }
@@ -150,7 +168,7 @@ func (pool *SourcePool) nextFailureDelay(entry *PoolEntry, now time.Time) time.D
 func (pool *SourcePool) UsableSources() []BookSource {
 	usable := []BookSource{}
 	for _, entry := range pool.Entries {
-		if entry.Status == SourceStatusUsable {
+		if entry.Status == SourceStatusUsable && !shouldExcludeBookSource(entry.Source) {
 			usable = append(usable, cleanBookSourceName(entry.Source))
 		}
 	}

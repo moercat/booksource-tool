@@ -11,9 +11,39 @@ import (
 
 var schemeRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]*://`)
 
+var defaultSearchKeywords = builtinDefaultSearchKeywords()
+
+func builtinDefaultSearchKeywords() []string {
+	return []string{
+		"我", "大陆", "异界", "仙", "人", "女", "花", "天",
+		"修仙", "宗门", "灵根", "金丹", "元婴", "飞升", "魔尊", "剑仙",
+		"系统", "签到", "面板", "模拟器", "末世", "丧尸", "基地", "天灾",
+		"穿越", "重生", "空间", "年代", "知青", "七零", "八零", "种田",
+		"总裁", "御姐", "邻居", "少妇", "老师", "校花", "合欢", "双修",
+		"悬疑", "诡异", "规则怪谈", "无限流", "武侠", "江湖", "锦衣卫", "侯府",
+		"斗破苍穹", "斗罗大陆", "凡人修仙传", "诡秘之主",
+		"遮天", "完美世界", "吞噬星空", "大主宰",
+		"雪中悍刀行", "剑来", "庆余年", "择天记",
+		"盘龙", "星辰变", "牧神记", "圣墟", "赘婿", "长生界",
+		"全球高武", "夜的命名术", "第一序列", "深空彼岸",
+	}
+}
+
+func setDefaultSearchKeywords(keywords []string) {
+	cleaned := uniqueSearchKeywords(keywords)
+	if len(cleaned) == 0 {
+		cleaned = builtinDefaultSearchKeywords()
+	}
+	defaultSearchKeywords = cleaned
+}
+
 func ProbeTargetFromBookSource(source BookSource) ProbeTarget {
+	return ProbeTargetFromBookSourceKeyword(source, searchKeyword(source))
+}
+
+func ProbeTargetFromBookSourceKeyword(source BookSource, keyword string) ProbeTarget {
 	baseURL := stringField(source, "bookSourceUrl")
-	if target := probeTargetFromSearchURL(stringField(source, "searchUrl"), baseURL, searchKeyword(source), false); target.URL != "" {
+	if target := probeTargetFromSearchURL(stringField(source, "searchUrl"), baseURL, keyword, false); target.URL != "" {
 		return target
 	}
 	return ProbeTarget{}
@@ -196,12 +226,36 @@ func hasUnresolvedTemplate(value string) bool {
 }
 
 func searchKeyword(source BookSource) string {
-	if rule, ok := source["ruleSearch"].(map[string]any); ok {
-		if keyword := stringField(rule, "checkKeyWord"); keyword != "" {
-			return keyword
-		}
+	keywords := searchKeywords(source)
+	if len(keywords) > 0 {
+		return keywords[0]
 	}
 	return "我"
+}
+
+func searchKeywords(source BookSource) []string {
+	keywords := []string{}
+	if rule, ok := source["ruleSearch"].(map[string]any); ok {
+		if keyword := stringField(rule, "checkKeyWord"); keyword != "" {
+			keywords = append(keywords, keyword)
+		}
+	}
+	keywords = append(keywords, defaultSearchKeywords...)
+	return uniqueSearchKeywords(keywords)
+}
+
+func uniqueSearchKeywords(keywords []string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, keyword := range keywords {
+		keyword = strings.TrimSpace(keyword)
+		if keyword == "" || seen[keyword] {
+			continue
+		}
+		seen[keyword] = true
+		out = append(out, keyword)
+	}
+	return out
 }
 
 func normalizeSourceURL(raw string) string {

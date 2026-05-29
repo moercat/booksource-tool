@@ -11,25 +11,44 @@ type ProbeTarget struct {
 }
 
 type ProbeJob struct {
-	Target ProbeTarget
-	Source BookSource
+	Target   ProbeTarget
+	Source   BookSource
+	Previous ProbeResult
 }
 
 type ProbeResult struct {
+	ProbeURL        string              `json:"probeUrl" bson:"probeUrl"`
+	Keyword         string              `json:"keyword,omitempty" bson:"keyword,omitempty"`
+	Method          string              `json:"method" bson:"method"`
+	Body            string              `json:"body,omitempty" bson:"body,omitempty"`
+	Domain          string              `json:"domain" bson:"domain"`
+	OK              bool                `json:"ok" bson:"ok"`
+	Status          int                 `json:"status" bson:"status"`
+	FinalURL        string              `json:"finalUrl" bson:"finalUrl"`
+	Error           string              `json:"error" bson:"error"`
+	MS              int64               `json:"ms" bson:"ms"`
+	Attempts        int                 `json:"attempts" bson:"attempts"`
+	BodyBytes       int                 `json:"bodyBytes" bson:"bodyBytes"`
+	ValidationLevel int                 `json:"validationLevel" bson:"validationLevel"`
+	ValidationGrade string              `json:"validationGrade" bson:"validationGrade"`
+	ValidationNotes []string            `json:"validationNotes" bson:"validationNotes"`
+	SampleTotal     int                 `json:"sampleTotal,omitempty" bson:"sampleTotal,omitempty"`
+	SampleSuccesses int                 `json:"sampleSuccesses,omitempty" bson:"sampleSuccesses,omitempty"`
+	SampleKeywords  []string            `json:"sampleKeywords,omitempty" bson:"sampleKeywords,omitempty"`
+	SampleResults   []ProbeSampleResult `json:"sampleResults,omitempty" bson:"sampleResults,omitempty"`
+}
+
+type ProbeSampleResult struct {
+	Keyword         string   `json:"keyword" bson:"keyword"`
 	ProbeURL        string   `json:"probeUrl" bson:"probeUrl"`
-	Method          string   `json:"method" bson:"method"`
-	Body            string   `json:"body,omitempty" bson:"body,omitempty"`
-	Domain          string   `json:"domain" bson:"domain"`
 	OK              bool     `json:"ok" bson:"ok"`
 	Status          int      `json:"status" bson:"status"`
-	FinalURL        string   `json:"finalUrl" bson:"finalUrl"`
-	Error           string   `json:"error" bson:"error"`
+	Error           string   `json:"error,omitempty" bson:"error,omitempty"`
 	MS              int64    `json:"ms" bson:"ms"`
-	Attempts        int      `json:"attempts" bson:"attempts"`
 	BodyBytes       int      `json:"bodyBytes" bson:"bodyBytes"`
 	ValidationLevel int      `json:"validationLevel" bson:"validationLevel"`
 	ValidationGrade string   `json:"validationGrade" bson:"validationGrade"`
-	ValidationNotes []string `json:"validationNotes" bson:"validationNotes"`
+	ValidationNotes []string `json:"validationNotes,omitempty" bson:"validationNotes,omitempty"`
 }
 
 type DuplicateGroup struct {
@@ -86,6 +105,51 @@ type Summary struct {
 	UpdatedAt             int64             `json:"updatedAt" bson:"updatedAt"`
 }
 
+type AppUsabilityReport struct {
+	GeneratedAt       int64                    `json:"generatedAt"`
+	ValidationVersion string                   `json:"validationVersion"`
+	ValidationScope   string                   `json:"validationScope"`
+	Count             int                      `json:"count"`
+	TierCounts        map[string]int           `json:"tierCounts"`
+	RiskCounts        map[string]int           `json:"riskCounts"`
+	ValidationGrades  map[string]int           `json:"validationGrades"`
+	Items             []AppUsabilityReportItem `json:"items"`
+}
+
+type AppUsabilityReportItem struct {
+	Index                 int      `json:"index"`
+	SourceName            string   `json:"sourceName"`
+	BookSourceURL         string   `json:"bookSourceUrl"`
+	SearchURL             string   `json:"searchUrl"`
+	BookSourceType        string   `json:"bookSourceType"`
+	ValidationGrade       string   `json:"validationGrade"`
+	ValidationLevel       int      `json:"validationLevel"`
+	ValidationLevelText   string   `json:"validationLevelText"`
+	ServerVerdict         string   `json:"serverVerdict"`
+	RuntimeRisk           string   `json:"runtimeRisk"`
+	AppUsabilityTier      string   `json:"appUsabilityTier"`
+	RiskScore             int      `json:"riskScore"`
+	RiskTags              []string `json:"riskTags"`
+	ValidationStatusText  string   `json:"validationStatusText"`
+	ValidationGroup       string   `json:"validationGroup"`
+	SearchStatus          string   `json:"searchStatus"`
+	SearchMS              int64    `json:"searchMs"`
+	SampleTotal           int      `json:"sampleTotal"`
+	SampleSuccesses       int      `json:"sampleSuccesses"`
+	SampleKeywords        []string `json:"sampleKeywords,omitempty"`
+	SuccessfulSampleAvgMS int64    `json:"successfulSampleAvgMs"`
+	SearchSpeedTier       string   `json:"searchSpeedTier"`
+	ProbeURL              string   `json:"probeUrl"`
+	BodyBytes             int      `json:"bodyBytes"`
+	ValidationNotes       []string `json:"validationNotes,omitempty"`
+	DetailRisk            string   `json:"detailRisk"`
+	TocRisk               string   `json:"tocRisk"`
+	ContentRisk           string   `json:"contentRisk"`
+	ExploreRisk           string   `json:"exploreRisk"`
+	RuntimeRequiredFor    []string `json:"runtimeRequiredFor,omitempty"`
+	KeptInExport          bool     `json:"keptInExport"`
+}
+
 type Config struct {
 	Input          string        `json:"input"`
 	Sources        []string      `json:"sources"`
@@ -114,6 +178,8 @@ type Config struct {
 	MaxRemoteItems           int           `json:"maxRemoteItems"`
 	MaxRemoteBookSources     int           `json:"maxRemoteBookSources"`
 	MaxRemoteCollections     int           `json:"maxRemoteCollections"`
+	MaxProbeJobsPerCycle     int           `json:"maxProbeJobsPerCycle"`
+	SearchKeywords           []string      `json:"searchKeywords"`
 }
 
 func (cfg Config) withDefaults() Config {
@@ -155,6 +221,12 @@ func (cfg Config) withDefaults() Config {
 	}
 	if cfg.MaxRemoteCollections <= 0 {
 		cfg.MaxRemoteCollections = 1
+	}
+	if cfg.MaxProbeJobsPerCycle <= 0 {
+		cfg.MaxProbeJobsPerCycle = 120
+	}
+	if len(cfg.SearchKeywords) == 0 {
+		cfg.SearchKeywords = builtinDefaultSearchKeywords()
 	}
 	if cfg.MongoDB == "" {
 		cfg.MongoDB = "booksource_tool"
