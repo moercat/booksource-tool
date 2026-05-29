@@ -1,0 +1,13 @@
+.DS_Store
+
+# Build artifacts
+booksource-tool
+booksource-tool-*
+*.exe
+
+# Generated outputs
+output/
+output-*/
+
+# Local-only config
+etc/config.local.json
