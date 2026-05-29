@@ -82,7 +82,7 @@ docker compose run --rm cleaner --input /data/shareBookSource.json \
 - 源池按结构化 `searchUrl` 去重，并维护每个去重源的状态、异常次数和下次探测时间。
 - 可用源默认 1 小时重探测一次；异常源默认 1 天重探测一次，异常越久退避越久，长期异常后停止探测。
 - 程序只更新本地 `output/usable_dedup_sources.json`；阿里云发布不由程序直接执行。
-- 腾讯云 systemd timer 每 2 小时检查本地 output hash，只有文件内容变化才 scp 到阿里云 filedown。
+- 腾讯云 systemd timer 每 2 小时检查本地 output hash，只有文件内容变化才 scp 到阿里云 filedown；部署模板见 `deploy/booksource-publish.*`，脚本使用 `/home/ubuntu/.ssh/booksource_publish` 显式指定发布密钥。
 
 网络导入地址保持：
 
@@ -93,9 +93,21 @@ http://8.135.16.113/var/legado-usable-book-sources.json
 ## 输出
 
 - `usable_dedup_sources.json`：去重后可通书源，可直接导入 Legado。
+- `app_usability_report.json`：App 可用性识别报告；保留全量源，不删除源；评分以多关键词搜索成功率为核心，其它 JS/WebView/HTTP/漫画等只作为说明标签；原始书源自带的分组、注释、`respondTime` 不输出也不参与评分。
+- 搜索质量使用多关键词样本判断，关键词由 `searchKeywords` 配置，默认使用真实常见搜索词和热门书名，而不是只搜分类名；例如：`修仙`、`宗门`、`灵根`、`金丹`、`系统`、`签到`、`末世`、`丧尸`、`穿越`、`重生`、`空间`、`种田`、`总裁`、`御姐`、`邻居`、`少妇`、`老师`、`校花`、`合欢`、`双修`、`规则怪谈`、`锦衣卫`、`斗破苍穹`、`斗罗大陆`、`凡人修仙传`、`诡秘之主`、`遮天`、`完美世界`、`吞噬星空`、`雪中悍刀行`、`剑来`、`庆余年` 等；书源自带 `ruleSearch.checkKeyWord` 时会优先加入样本。评分以关键词成功率为主，成功搜索平均耗时只做小幅扣分：`fast_1s` 不扣分、`normal_5s` 少量扣分、`very_slow_over_5s` 较多扣分。
+- 探测是分级执行：先做代表关键词 search 校验；search 通过后才进入多关键词质量采样，失败源不会直接跑完整关键词集。
+- 常驻调度是增量执行，每轮最多探测 `maxProbeJobsPerCycle` 个到期源，避免一次性全量阻塞；放着运行会逐步覆盖完整源池。
+- `app_usability_report.json` 还会静态检查 `ruleBookInfo`、`ruleToc`、`ruleContent`、`exploreUrl/ruleExplore`，输出 `detailRisk`、`tocRisk`、`contentRisk`、`exploreRisk` 和 `runtimeRequiredFor`；正文/发现如依赖 `@js` / WebView 只标记运行时依赖，不伪装成服务端已完整验证。
+- 直接用 Bing/Google/百度/搜狗/360/神马等搜索引擎 `site:` 查询伪装的书源会被过滤，不进入可用源输出。
 - `duplicate_report.json`：重复搜索链接分组。
 - `connectivity_report.json`：每个唯一书源代表搜索链接的探测结果。
 - `summary.json`：汇总统计。
+
+公开文件：
+
+- `http://8.135.16.113/var/legado-usable-book-sources.json`：兼容原导入地址。
+- `http://8.135.16.113/var/legado-all-usable-book-sources.json`：全量可用源导入地址，内容与当前主输出一致。
+- `http://8.135.16.113/var/legado-app-usability-report.json`：全量源 App 可用性风险报告。
 
 ## Mongo 集合
 

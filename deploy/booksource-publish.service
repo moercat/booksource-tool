@@ -1,0 +1,7 @@
+[Unit]
+Description=Publish booksource output to Aliyun filedown
+
+[Service]
+Type=oneshot
+User=ubuntu
+ExecStart=/usr/local/bin/booksource-publish.sh
