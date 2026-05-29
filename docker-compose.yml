@@ -1,0 +1,14 @@
+services:
+  booksource-tool:
+    build: .
+    image: booksource-cleaner:latest
+    container_name: booksource-tool
+    restart: unless-stopped
+    command: ["--config", "/app/etc/config.json"]
+    network_mode: host
+    mem_limit: 512m
+    cpus: "0.8"
+    volumes:
+      - ./inbox:/data/inbox
+      - ./output:/output
+      - ./etc:/app/etc:ro

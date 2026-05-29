@@ -1,0 +1,24 @@
+{
+  "watchDir": "/data/inbox",
+  "sources": [],
+  "remoteUrls": [
+    "https://www.yck2026.top/yuedu/shuyuan/index.html",
+    "https://www.yck2026.top/yuedu/shuyuans/index.html"
+  ],
+  "outputDir": "/output",
+  "interval": "5m",
+  "remoteFetchInterval": "15m",
+  "usableProbeInterval": "1h",
+  "invalidProbeInterval": "24h",
+  "maxConsecutiveFailures": 60,
+  "maxRemoteItems": 10,
+  "maxRemoteBookSources": 20,
+  "maxRemoteCollections": 1,
+  "workers": 80,
+  "timeout": "5s",
+  "retries": 3,
+  "retryDelay": "500ms",
+  "mongoURI": "mongodb://127.0.0.1:27018",
+  "mongoDB": "booksource_tool",
+  "publishTarget": ""
+}
