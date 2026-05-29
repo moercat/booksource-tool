@@ -80,13 +80,13 @@ func runSchedulerCycle(ctx context.Context, cfg Config, pool *SourcePool, nextRe
 		*nextRemoteFetch = now.Add(cfg.RemoteFetchInterval)
 	}
 
-	dueTargets := pool.DueTargets(now)
-	if len(dueTargets) > 0 {
-		probeResults := ProbeAll(dueTargets, cfg.Workers, cfg.Timeout, cfg.Retries, cfg.RetryDelay)
+	dueJobs := pool.DueJobs(now)
+	if len(dueJobs) > 0 {
+		probeResults := ProbeAllJobs(dueJobs, cfg.Workers, cfg.Timeout, cfg.Retries, cfg.RetryDelay)
 		for key, result := range probeResults {
 			pool.RecordProbe(key, result, time.Now())
 		}
-		fmt.Fprintf(os.Stderr, "probe completed: due=%d\n", len(dueTargets))
+		fmt.Fprintf(os.Stderr, "probe completed: due=%d\n", len(dueJobs))
 	}
 
 	usablePath := filepath.Join(cfg.OutputDir, "usable_dedup_sources.json")
@@ -169,11 +169,12 @@ func runOnce(cfg Config) error {
 		groups[key] = append(groups[key], source)
 	}
 
-	probeTargets := map[string]ProbeTarget{}
+	probeJobs := map[string]ProbeJob{}
 	for key, items := range groups {
-		probeTargets[key] = ProbeTargetFromBookSource(chooseRepresentative(items))
+		representative := chooseRepresentative(items)
+		probeJobs[key] = ProbeJob{Target: ProbeTargetFromBookSource(representative), Source: representative}
 	}
-	probeResults := ProbeAll(probeTargets, cfg.Workers, cfg.Timeout, cfg.Retries, cfg.RetryDelay)
+	probeResults := ProbeAllJobs(probeJobs, cfg.Workers, cfg.Timeout, cfg.Retries, cfg.RetryDelay)
 
 	usable := []BookSource{}
 	duplicates := []DuplicateGroup{}

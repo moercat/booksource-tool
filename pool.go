@@ -80,14 +80,14 @@ func (pool *SourcePool) AddOrUpdate(source BookSource, origin string, now time.T
 	return false
 }
 
-func (pool *SourcePool) DueTargets(now time.Time) map[string]ProbeTarget {
-	due := map[string]ProbeTarget{}
+func (pool *SourcePool) DueJobs(now time.Time) map[string]ProbeJob {
+	due := map[string]ProbeJob{}
 	nowUnix := now.Unix()
 	for key, entry := range pool.Entries {
 		if entry.Status == SourceStatusDisabled || entry.NextProbeAt == 0 || entry.NextProbeAt > nowUnix {
 			continue
 		}
-		due[key] = entry.ProbeTarget
+		due[key] = ProbeJob{Target: entry.ProbeTarget, Source: entry.Source}
 	}
 	return due
 }
