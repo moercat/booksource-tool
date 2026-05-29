@@ -51,6 +51,8 @@ func parseFlags() Config {
 	maxRemoteItems := flag.Int("max-remote-items", 10, "maximum JSON items to fetch from each remote listing page per cycle")
 	maxRemoteBookSources := flag.Int("max-remote-book-sources", 20, "maximum latest individual book sources to fetch per cycle")
 	maxRemoteCollections := flag.Int("max-remote-collections", 1, "maximum latest source collections to fetch per cycle")
+	maxProbeJobsPerCycle := flag.Int("max-probe-jobs-per-cycle", 120, "maximum due sources to probe in each scheduler cycle")
+	searchKeywords := flag.String("search-keywords", "", "comma-separated search keywords for quality sampling")
 	publishTarget := flag.String("publish-target", "", "optional scp/rsync target for usable JSON, e.g. root@8.135.16.113:/opt/filedown/var/legado-usable-book-sources.json")
 	mongoURI := flag.String("mongo-uri", "", "optional MongoDB URI for caching results")
 	mongoDB := flag.String("mongo-db", "booksource_tool", "MongoDB database name")
@@ -111,6 +113,12 @@ func parseFlags() Config {
 	if flagWasSet("max-remote-collections") {
 		cfg.MaxRemoteCollections = *maxRemoteCollections
 	}
+	if flagWasSet("max-probe-jobs-per-cycle") {
+		cfg.MaxProbeJobsPerCycle = *maxProbeJobsPerCycle
+	}
+	if flagWasSet("search-keywords") {
+		cfg.SearchKeywords = splitCSV(*searchKeywords)
+	}
 	if *publishTarget != "" {
 		cfg.PublishTarget = *publishTarget
 	}
@@ -121,6 +129,17 @@ func parseFlags() Config {
 		cfg.MongoDB = *mongoDB
 	}
 	return cfg.withDefaults()
+}
+
+func splitCSV(value string) []string {
+	items := []string{}
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
 }
 
 func loadConfigFile(path string) Config {
