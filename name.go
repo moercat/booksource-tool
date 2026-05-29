@@ -24,6 +24,9 @@ func cleanBookSourceName(source BookSource) BookSource {
 	for key, value := range source {
 		cleaned[key] = value
 	}
+	cleaned["bookSourceGroup"] = ""
+	cleaned["bookSourceComment"] = ""
+	cleaned["respondTime"] = 0
 	name := normalizeBookSourceName(stringField(source, "bookSourceName"))
 	if name != "" {
 		cleaned["bookSourceName"] = name
