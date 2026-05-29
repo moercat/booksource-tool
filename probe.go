@@ -12,13 +12,21 @@ import (
 )
 
 func ProbeAll(probeTargets map[string]ProbeTarget, workers int, timeout time.Duration, retries int, retryDelay time.Duration) map[string]ProbeResult {
+	jobs := make(map[string]ProbeJob, len(probeTargets))
+	for key, target := range probeTargets {
+		jobs[key] = ProbeJob{Target: target}
+	}
+	return ProbeAllJobs(jobs, workers, timeout, retries, retryDelay)
+}
+
+func ProbeAllJobs(probeJobs map[string]ProbeJob, workers int, timeout time.Duration, retries int, retryDelay time.Duration) map[string]ProbeResult {
 	if workers <= 0 {
 		workers = 1
 	}
-	results := make(map[string]ProbeResult, len(probeTargets))
+	results := make(map[string]ProbeResult, len(probeJobs))
 	jobs := make(chan struct {
-		key    string
-		target ProbeTarget
+		key string
+		job ProbeJob
 	})
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -27,18 +35,18 @@ func ProbeAll(probeTargets map[string]ProbeTarget, workers int, timeout time.Dur
 		go func() {
 			defer wg.Done()
 			for job := range jobs {
-				res := Probe(job.target, timeout, retries, retryDelay)
+				res := ProbeWithSource(job.job.Target, job.job.Source, timeout, retries, retryDelay)
 				mu.Lock()
 				results[job.key] = res
 				mu.Unlock()
 			}
 		}()
 	}
-	for key, target := range probeTargets {
+	for key, job := range probeJobs {
 		jobs <- struct {
-			key    string
-			target ProbeTarget
-		}{key: key, target: target}
+			key string
+			job ProbeJob
+		}{key: key, job: job}
 	}
 	close(jobs)
 	wg.Wait()
@@ -46,12 +54,16 @@ func ProbeAll(probeTargets map[string]ProbeTarget, workers int, timeout time.Dur
 }
 
 func Probe(target ProbeTarget, timeout time.Duration, retries int, retryDelay time.Duration) ProbeResult {
+	return ProbeWithSource(target, nil, timeout, retries, retryDelay)
+}
+
+func ProbeWithSource(target ProbeTarget, source BookSource, timeout time.Duration, retries int, retryDelay time.Duration) ProbeResult {
 	if retries <= 0 {
 		retries = 1
 	}
 	var last ProbeResult
 	for attempt := 1; attempt <= retries; attempt++ {
-		last = probeOnce(target, timeout)
+		last = probeOnce(target, source, timeout)
 		last.Attempts = attempt
 		if last.OK {
 			return last
@@ -63,7 +75,7 @@ func Probe(target ProbeTarget, timeout time.Duration, retries int, retryDelay ti
 	return last
 }
 
-func probeOnce(target ProbeTarget, timeout time.Duration) ProbeResult {
+func probeOnce(target ProbeTarget, source BookSource, timeout time.Duration) ProbeResult {
 	started := time.Now()
 	method := strings.ToUpper(strings.TrimSpace(target.Method))
 	if method == "" {
@@ -71,7 +83,7 @@ func probeOnce(target ProbeTarget, timeout time.Duration) ProbeResult {
 	}
 	result := ProbeResult{ProbeURL: target.URL, Method: method, Body: target.Body, Domain: domainOf(target.URL)}
 	client := &http.Client{Timeout: timeout, Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
-	if method == http.MethodGet {
+	if method == http.MethodGet && source == nil {
 		if resp, err := doProbeRequest(client, http.MethodHead, target.URL, ""); err == nil {
 			defer resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
@@ -89,8 +101,22 @@ func probeOnce(target ProbeTarget, timeout time.Duration) ProbeResult {
 		return result
 	}
 	defer resp.Body.Close()
-	_, _ = io.CopyN(io.Discard, resp.Body, 512)
-	result.OK, result.Status, result.FinalURL = resp.StatusCode == http.StatusOK, resp.StatusCode, resp.Request.URL.String()
+	data, readErr := io.ReadAll(io.LimitReader(resp.Body, maxProbeBodyBytes))
+	if readErr != nil {
+		result.Error = fmt.Sprintf("%T: %.200s", readErr, readErr.Error())
+	}
+	result.Status, result.FinalURL = resp.StatusCode, resp.Request.URL.String()
+	result.BodyBytes = len(data)
+	if resp.StatusCode == http.StatusOK {
+		validation := validateSearchResponse(source, data, time.Since(started).Milliseconds())
+		result.ValidationLevel = validation.Level
+		result.ValidationGrade = validation.Grade
+		result.ValidationNotes = validation.Notes
+		result.OK = validation.OK
+	} else {
+		result.ValidationGrade = "D"
+		result.ValidationNotes = []string{"non-200 status"}
+	}
 	result.MS = time.Since(started).Milliseconds()
 	return result
 }

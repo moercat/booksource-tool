@@ -10,17 +10,26 @@ type ProbeTarget struct {
 	Body   string
 }
 
+type ProbeJob struct {
+	Target ProbeTarget
+	Source BookSource
+}
+
 type ProbeResult struct {
-	ProbeURL string `json:"probeUrl" bson:"probeUrl"`
-	Method   string `json:"method" bson:"method"`
-	Body     string `json:"body,omitempty" bson:"body,omitempty"`
-	Domain   string `json:"domain" bson:"domain"`
-	OK       bool   `json:"ok" bson:"ok"`
-	Status   int    `json:"status" bson:"status"`
-	FinalURL string `json:"finalUrl" bson:"finalUrl"`
-	Error    string `json:"error" bson:"error"`
-	MS       int64  `json:"ms" bson:"ms"`
-	Attempts int    `json:"attempts" bson:"attempts"`
+	ProbeURL        string   `json:"probeUrl" bson:"probeUrl"`
+	Method          string   `json:"method" bson:"method"`
+	Body            string   `json:"body,omitempty" bson:"body,omitempty"`
+	Domain          string   `json:"domain" bson:"domain"`
+	OK              bool     `json:"ok" bson:"ok"`
+	Status          int      `json:"status" bson:"status"`
+	FinalURL        string   `json:"finalUrl" bson:"finalUrl"`
+	Error           string   `json:"error" bson:"error"`
+	MS              int64    `json:"ms" bson:"ms"`
+	Attempts        int      `json:"attempts" bson:"attempts"`
+	BodyBytes       int      `json:"bodyBytes" bson:"bodyBytes"`
+	ValidationLevel int      `json:"validationLevel" bson:"validationLevel"`
+	ValidationGrade string   `json:"validationGrade" bson:"validationGrade"`
+	ValidationNotes []string `json:"validationNotes" bson:"validationNotes"`
 }
 
 type DuplicateGroup struct {
@@ -31,22 +40,25 @@ type DuplicateGroup struct {
 }
 
 type DedupDoc struct {
-	ID             string     `bson:"_id"`
-	NormalizedURL  string     `json:"normalizedUrl" bson:"normalizedUrl"`
-	ProbeURL       string     `json:"probeUrl" bson:"probeUrl"`
-	Method         string     `json:"method" bson:"method"`
-	Body           string     `json:"body,omitempty" bson:"body,omitempty"`
-	Domain         string     `json:"domain" bson:"domain"`
-	OK             bool       `json:"ok" bson:"ok"`
-	Status         int        `json:"status" bson:"status"`
-	Error          string     `json:"error" bson:"error"`
-	MS             int64      `json:"ms" bson:"ms"`
-	Attempts       int        `json:"attempts" bson:"attempts"`
-	DuplicateCount int        `json:"duplicateCount" bson:"duplicateCount"`
-	Names          []string   `json:"names" bson:"names"`
-	RawURLs        []string   `json:"rawUrls" bson:"rawUrls"`
-	Representative BookSource `json:"representative" bson:"representative"`
-	UpdatedAt      int64      `json:"updatedAt" bson:"updatedAt"`
+	ID              string     `bson:"_id"`
+	NormalizedURL   string     `json:"normalizedUrl" bson:"normalizedUrl"`
+	ProbeURL        string     `json:"probeUrl" bson:"probeUrl"`
+	Method          string     `json:"method" bson:"method"`
+	Body            string     `json:"body,omitempty" bson:"body,omitempty"`
+	Domain          string     `json:"domain" bson:"domain"`
+	OK              bool       `json:"ok" bson:"ok"`
+	Status          int        `json:"status" bson:"status"`
+	Error           string     `json:"error" bson:"error"`
+	MS              int64      `json:"ms" bson:"ms"`
+	Attempts        int        `json:"attempts" bson:"attempts"`
+	ValidationLevel int        `json:"validationLevel" bson:"validationLevel"`
+	ValidationGrade string     `json:"validationGrade" bson:"validationGrade"`
+	ValidationNotes []string   `json:"validationNotes" bson:"validationNotes"`
+	DuplicateCount  int        `json:"duplicateCount" bson:"duplicateCount"`
+	Names           []string   `json:"names" bson:"names"`
+	RawURLs         []string   `json:"rawUrls" bson:"rawUrls"`
+	Representative  BookSource `json:"representative" bson:"representative"`
+	UpdatedAt       int64      `json:"updatedAt" bson:"updatedAt"`
 }
 
 type DomainDoc struct {
