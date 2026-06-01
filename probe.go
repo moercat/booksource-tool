@@ -80,6 +80,7 @@ func probeRandomKeywordSearch(source BookSource, previous ProbeResult, timeout t
 		probesPerCycle = 1 // all tested, maintenance mode
 	}
 
+	var bestDetail ProbeResult
 	for i := 0; i < probesPerCycle; i++ {
 		keyword := chooseRandomProbeKeyword(keywords, result)
 		target := ProbeTargetFromBookSourceKeyword(source, keyword)
@@ -95,9 +96,22 @@ func probeRandomKeywordSearch(source BookSource, previous ProbeResult, timeout t
 		res.Keyword = keyword
 		if res.OK {
 			result.SampleSuccesses++
+			if bestDetail.ProbeURL == "" || res.MS < bestDetail.MS {
+				bestDetail = res
+			}
 		}
 		result.SampleKeywords = appendUniqueString(result.SampleKeywords, keyword)
 		result.SampleResults = append(result.SampleResults, sampleResultFromProbe(keyword, res))
+	}
+	if bestDetail.ProbeURL != "" {
+		result.DetailOK = bestDetail.DetailOK
+		result.ContentOK = bestDetail.ContentOK
+		result.ChineseChars = bestDetail.ChineseChars
+		result.ExtractedName = bestDetail.ExtractedName
+		result.ExtractedAuthor = bestDetail.ExtractedAuthor
+		result.ExtractedLastChapter = bestDetail.ExtractedLastChapter
+		result.ExtractedKind = bestDetail.ExtractedKind
+		result.ExtractedWords = bestDetail.ExtractedWords
 	}
 	return result
 }
