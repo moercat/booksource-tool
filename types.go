@@ -17,26 +17,34 @@ type ProbeJob struct {
 }
 
 type ProbeResult struct {
-	ProbeURL        string              `json:"probeUrl" bson:"probeUrl"`
-	Keyword         string              `json:"keyword,omitempty" bson:"keyword,omitempty"`
-	Method          string              `json:"method" bson:"method"`
-	Body            string              `json:"body,omitempty" bson:"body,omitempty"`
-	Domain          string              `json:"domain" bson:"domain"`
-	OK              bool                `json:"ok" bson:"ok"`
-	Status          int                 `json:"status" bson:"status"`
-	FinalURL        string              `json:"finalUrl" bson:"finalUrl"`
-	Error           string              `json:"error" bson:"error"`
-	MS              int64               `json:"ms" bson:"ms"`
-	Attempts        int                 `json:"attempts" bson:"attempts"`
-	BodyBytes       int                 `json:"bodyBytes" bson:"bodyBytes"`
-	ValidationLevel int                 `json:"validationLevel" bson:"validationLevel"`
-	ValidationGrade string              `json:"validationGrade" bson:"validationGrade"`
-	ValidationNotes []string            `json:"validationNotes" bson:"validationNotes"`
-	SampleTotal     int                 `json:"sampleTotal,omitempty" bson:"sampleTotal,omitempty"`
-	SampleSuccesses int                 `json:"sampleSuccesses,omitempty" bson:"sampleSuccesses,omitempty"`
-	SampleKeywords  []string            `json:"sampleKeywords,omitempty" bson:"sampleKeywords,omitempty"`
-	SampleResults   []ProbeSampleResult `json:"sampleResults,omitempty" bson:"sampleResults,omitempty"`
-	rawBody         []byte              // response body, not persisted
+	ProbeURL             string              `json:"probeUrl" bson:"probeUrl"`
+	Keyword              string              `json:"keyword,omitempty" bson:"keyword,omitempty"`
+	Method               string              `json:"method" bson:"method"`
+	Body                 string              `json:"body,omitempty" bson:"body,omitempty"`
+	Domain               string              `json:"domain" bson:"domain"`
+	OK                   bool                `json:"ok" bson:"ok"`
+	Status               int                 `json:"status" bson:"status"`
+	FinalURL             string              `json:"finalUrl" bson:"finalUrl"`
+	Error                string              `json:"error" bson:"error"`
+	MS                   int64               `json:"ms" bson:"ms"`
+	Attempts             int                 `json:"attempts" bson:"attempts"`
+	BodyBytes            int                 `json:"bodyBytes" bson:"bodyBytes"`
+	ChineseChars         int                 `json:"chineseChars,omitempty" bson:"chineseChars,omitempty"`
+	ValidationLevel      int                 `json:"validationLevel" bson:"validationLevel"`
+	ValidationGrade      string              `json:"validationGrade" bson:"validationGrade"`
+	ValidationNotes      []string            `json:"validationNotes" bson:"validationNotes"`
+	SampleTotal          int                 `json:"sampleTotal,omitempty" bson:"sampleTotal,omitempty"`
+	SampleSuccesses      int                 `json:"sampleSuccesses,omitempty" bson:"sampleSuccesses,omitempty"`
+	SampleKeywords       []string            `json:"sampleKeywords,omitempty" bson:"sampleKeywords,omitempty"`
+	SampleResults        []ProbeSampleResult `json:"sampleResults,omitempty" bson:"sampleResults,omitempty"`
+	ExtractedName        string              `json:"extractedName,omitempty" bson:"extractedName,omitempty"`
+	ExtractedAuthor      string              `json:"extractedAuthor,omitempty" bson:"extractedAuthor,omitempty"`
+	ExtractedLastChapter string              `json:"extractedLastChapter,omitempty" bson:"extractedLastChapter,omitempty"`
+	ExtractedKind        string              `json:"extractedKind,omitempty" bson:"extractedKind,omitempty"`
+	ExtractedWords       string              `json:"extractedWords,omitempty" bson:"extractedWords,omitempty"`
+	DetailOK             bool                `json:"detailOk,omitempty" bson:"detailOk,omitempty"`
+	ContentOK            bool                `json:"contentOk,omitempty" bson:"contentOk,omitempty"`
+	rawBody              []byte              // response body, not persisted
 }
 
 type ProbeSampleResult struct {

@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     command: ["--config", "/app/etc/config.json"]
     network_mode: host
-    mem_limit: 512m
+    mem_limit: 1g
     cpus: "0.8"
     volumes:
       - ./inbox:/data/inbox

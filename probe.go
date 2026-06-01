@@ -3,13 +3,18 @@ package main
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/PuerkitoBio/goquery"
 )
 
 func ProbeAll(probeTargets map[string]ProbeTarget, workers int, timeout time.Duration, retries int, retryDelay time.Duration) map[string]ProbeResult {
@@ -67,27 +72,33 @@ func ProbeWithSource(target ProbeTarget, source BookSource, previous ProbeResult
 
 func probeRandomKeywordSearch(source BookSource, previous ProbeResult, timeout time.Duration, retries int, retryDelay time.Duration) ProbeResult {
 	keywords := searchKeywords(source)
-	keyword := chooseRandomProbeKeyword(keywords, previous)
-	target := ProbeTargetFromBookSourceKeyword(source, keyword)
-	if target.URL == "" {
-		result := previous
-		result.Keyword = keyword
-		result.OK = false
-		result.Error = "empty probe target"
+	result := previous
+
+	// Probe 3 keywords per cycle to speed up first pass
+	probesPerCycle := 3
+	if len(previous.SampleKeywords) >= len(keywords) {
+		probesPerCycle = 1 // all tested, maintenance mode
+	}
+
+	for i := 0; i < probesPerCycle; i++ {
+		keyword := chooseRandomProbeKeyword(keywords, result)
+		target := ProbeTargetFromBookSourceKeyword(source, keyword)
 		result.SampleTotal++
+		if target.URL == "" {
+			result.OK = false
+			result.Error = "empty probe target"
+			result.SampleKeywords = appendUniqueString(result.SampleKeywords, keyword)
+			result.SampleResults = append(result.SampleResults, ProbeSampleResult{Keyword: keyword, Error: result.Error})
+			continue
+		}
+		res := probeWithRetries(target, source, timeout, retries, retryDelay)
+		res.Keyword = keyword
+		if res.OK {
+			result.SampleSuccesses++
+		}
 		result.SampleKeywords = appendUniqueString(result.SampleKeywords, keyword)
-		result.SampleResults = append(result.SampleResults, ProbeSampleResult{Keyword: keyword, Error: result.Error})
-		return result
+		result.SampleResults = append(result.SampleResults, sampleResultFromProbe(keyword, res))
 	}
-	result := probeWithRetries(target, source, timeout, retries, retryDelay)
-	result.Keyword = keyword
-	result.SampleTotal = previous.SampleTotal + 1
-	result.SampleSuccesses = previous.SampleSuccesses
-	if result.OK {
-		result.SampleSuccesses++
-	}
-	result.SampleKeywords = appendUniqueString(append([]string{}, previous.SampleKeywords...), keyword)
-	result.SampleResults = append(append([]ProbeSampleResult{}, previous.SampleResults...), sampleResultFromProbe(keyword, result))
 	return result
 }
 
@@ -240,12 +251,111 @@ func probeOnce(target ProbeTarget, source BookSource, timeout time.Duration) Pro
 	}
 	result.Status, result.FinalURL = resp.StatusCode, resp.Request.URL.String()
 	result.BodyBytes = len(data)
+	result.ChineseChars = countChineseChars(data)
 	if resp.StatusCode == http.StatusOK {
 		validation := validateSearchResponse(source, data, time.Since(started).Milliseconds())
 		result.ValidationLevel = validation.Level
 		result.ValidationGrade = validation.Grade
 		result.ValidationNotes = validation.Notes
 		result.OK = validation.OK
+
+		// Extract book metadata from search results
+		if result.OK && len(source) > 0 {
+			ruleSearch, _ := source["ruleSearch"].(map[string]any)
+			isJSON := jsonLooksValid(string(data))
+			books := extractSearchBooks(data, ruleSearch, isJSON)
+			if len(books) > 0 {
+				book := books[0]
+				result.ExtractedName = book["name"]
+				result.ExtractedAuthor = book["author"]
+				result.ExtractedLastChapter = book["lastChapter"]
+				result.ExtractedKind = book["kind"]
+				result.ExtractedWords = book["wordCount"]
+
+				// Try to verify the first book's detail page is accessible
+				if book["bookUrl"] != "" {
+					detailURL := resolveURL(book["bookUrl"], stringField(source, "bookSourceUrl"))
+					if detailURL != "" {
+						detailRes := probeWithRetries(ProbeTarget{URL: detailURL, Method: "GET"}, nil, timeout, 1, 0)
+						result.DetailOK = detailRes.OK
+
+						// Try to find content using source's own rules
+						if detailRes.OK && len(detailRes.rawBody) > 200 {
+							ruleBookInfo, _ := source["ruleBookInfo"].(map[string]any)
+							ruleToc, _ := source["ruleToc"].(map[string]any)
+
+							// Determine TOC URL: from ruleBookInfo.tocUrl or use detail URL
+							tocURL := ""
+							tocRule := strings.TrimSpace(stringField(ruleBookInfo, "tocUrl"))
+							if tocRule != "" && !strings.HasPrefix(tocRule, "@js:") && !strings.HasPrefix(tocRule, "<js>") {
+								if strings.HasPrefix(tocRule, "http") {
+									tocURL = tocRule
+								} else {
+									// CSS selector to extract tocUrl from detail page
+									detailDoc, docErr := goquery.NewDocumentFromReader(strings.NewReader(string(detailRes.rawBody)))
+									if docErr == nil {
+										tocURL = extractHTMLField(detailDoc.Selection, tocRule)
+									}
+								}
+							}
+							if tocURL == "" {
+								tocURL = detailURL
+							} else {
+								tocURL = resolveURL(tocURL, detailURL)
+							}
+
+							// Fetch TOC page and try to extract first chapter
+							chapterListRule := strings.TrimSpace(stringField(ruleToc, "chapterList"))
+							chapterURLRule := strings.TrimSpace(stringField(ruleToc, "chapterUrl"))
+							if chapterListRule != "" && !strings.HasPrefix(chapterListRule, "@js:") && !strings.HasPrefix(chapterListRule, "<js>") {
+								tocRes := probeWithRetries(ProbeTarget{URL: tocURL, Method: "GET"}, nil, timeout, 1, 0)
+								if tocRes.OK && len(tocRes.rawBody) > 200 {
+									isJSON := jsonLooksValid(string(tocRes.rawBody))
+									if isJSON && strings.HasPrefix(chapterListRule, "$") {
+										// JSON path - extract first chapter
+										var root any
+										if json.Unmarshal(tocRes.rawBody, &root) == nil {
+											items := resolveJSONPath(root, chapterListRule)
+											if len(items) > 0 {
+												if m, ok := items[0].(map[string]any); ok {
+													if chapterURLRule != "" && strings.HasPrefix(chapterURLRule, "$") {
+														cu := resolveJSONString(m, chapterURLRule)
+														if cu != "" {
+															fullCU := resolveURL(cu, tocURL)
+															if fullCU != "" {
+																cr := probeWithRetries(ProbeTarget{URL: fullCU, Method: "GET"}, nil, timeout, 1, 0)
+																result.ContentOK = cr.OK && len(cr.rawBody) > 500
+															}
+														}
+													}
+												}
+											}
+										}
+									} else {
+										// HTML - use CSS selector
+										doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(tocRes.rawBody)))
+										if err == nil {
+											sel := doc.Find(cssSelectorFromRule(chapterListRule))
+											if sel.Length() > 0 {
+												firstItem := sel.First()
+												chapterURL := extractHTMLField(firstItem, chapterURLRule)
+												if chapterURL != "" {
+													fullCU := resolveURL(chapterURL, tocURL)
+													if fullCU != "" {
+														cr := probeWithRetries(ProbeTarget{URL: fullCU, Method: "GET"}, nil, timeout, 1, 0)
+														result.ContentOK = cr.OK && len(cr.rawBody) > 500
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 	} else {
 		result.ValidationGrade = "D"
 		result.ValidationNotes = []string{"non-200 status"}
@@ -268,4 +378,73 @@ func doProbeRequest(client *http.Client, method, probeURL, body string) (*http.R
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 	return client.Do(req)
+}
+
+func resolveURL(rawURL, baseURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	if strings.HasPrefix(rawURL, "http://") || strings.HasPrefix(rawURL, "https://") {
+		return rawURL
+	}
+	if strings.HasPrefix(rawURL, "//") {
+		return "https:" + rawURL
+	}
+	if strings.HasPrefix(rawURL, "/") {
+		parsed, err := url.Parse(baseURL)
+		if err != nil {
+			return ""
+		}
+		return parsed.Scheme + "://" + parsed.Host + rawURL
+	}
+	if idx := strings.LastIndex(baseURL, "/"); idx >= 0 {
+		return baseURL[:idx+1] + rawURL
+	}
+	return baseURL + "/" + rawURL
+}
+
+func countChineseChars(data []byte) int {
+	count := 0
+	for _, b := range string(data) {
+		if b >= 0x4E00 && b <= 0x9FFF {
+			count++
+		}
+	}
+	return count
+}
+
+func findContentURL(body []byte) string {
+	text := string(body)
+	// Skip non-content file extensions
+	skipExt := func(u string) bool {
+		for _, ext := range []string{".css", ".js", ".png", ".jpg", ".gif", ".svg", ".ico", ".woff", ".ttf"} {
+			if strings.HasSuffix(u, ext) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Look for chapter-like URLs
+	re := regexp.MustCompile(`href=["']([^"']+)["']`)
+	for _, m := range re.FindAllStringSubmatch(text, -1) {
+		u := m[1]
+		if skipExt(u) {
+			continue
+		}
+		if strings.Contains(u, "search") || strings.Contains(u, "login") || strings.HasPrefix(u, "#") || strings.HasPrefix(u, "javascript") {
+			continue
+		}
+		// Prefer URLs with chapter indicators
+		if strings.Contains(u, "chapter") || strings.Contains(u, "read") || strings.Contains(u, "/book/") || strings.Contains(u, "/novel/") {
+			if strings.Count(u, "/") >= 2 {
+				return u
+			}
+		}
+		// Or URLs ending with .html and not looking like a category page
+		if strings.HasSuffix(u, ".html") && strings.Count(u, "/") >= 2 && !strings.Contains(u, "list") && !strings.Contains(u, "index") {
+			return u
+		}
+	}
+	return ""
 }

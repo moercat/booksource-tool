@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -50,6 +51,27 @@ func validateSearchResponse(source BookSource, body []byte, ms int64) SearchVali
 	} else {
 		validation.Level = maxInt(validation.Level, validateHTMLSearchBody(text, ruleSearch, &validation))
 	}
+
+	// Try to extract actual book items
+	isJSON := jsonLooksValid(text)
+	books := extractSearchBooks(body, ruleSearch, isJSON)
+	if len(books) > 0 {
+		hasName := false
+		hasURL := false
+		for _, book := range books {
+			if book["name"] != "" {
+				hasName = true
+			}
+			if book["bookUrl"] != "" {
+				hasURL = true
+			}
+		}
+		if hasName && hasURL {
+			validation.Level = maxInt(validation.Level, 3)
+			validation.Notes = append(validation.Notes, fmt.Sprintf("extracted %d books", len(books)))
+		}
+	}
+
 	validation.Grade = gradeForValidation(validation.Level, ms)
 	return validation
 }
