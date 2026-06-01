@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -14,24 +15,25 @@ const (
 )
 
 type PoolEntry struct {
-	Key                 string      `json:"key" bson:"_id"`
-	Source              BookSource  `json:"source" bson:"source"`
-	ProbeTarget         ProbeTarget `json:"probeTarget" bson:"probeTarget"`
-	Status              string      `json:"status" bson:"status"`
-	ProbeCount          int         `json:"probeCount" bson:"probeCount"`
-	FailureCount        int         `json:"failureCount" bson:"failureCount"`
-	ConsecutiveFailures int         `json:"consecutiveFailures" bson:"consecutiveFailures"`
-	LastProbeAt         int64       `json:"lastProbeAt" bson:"lastProbeAt"`
-	LastSuccessAt       int64       `json:"lastSuccessAt" bson:"lastSuccessAt"`
-	LastFailureAt       int64       `json:"lastFailureAt" bson:"lastFailureAt"`
-	AbnormalSince       int64       `json:"abnormalSince" bson:"abnormalSince"`
-	NextProbeAt         int64       `json:"nextProbeAt" bson:"nextProbeAt"`
-	DisabledAt          int64       `json:"disabledAt,omitempty" bson:"disabledAt,omitempty"`
-	DisabledReason      string      `json:"disabledReason,omitempty" bson:"disabledReason,omitempty"`
-	LastProbe           ProbeResult `json:"lastProbe" bson:"lastProbe"`
-	Origins             []string    `json:"origins" bson:"origins"`
-	CreatedAt           int64       `json:"createdAt" bson:"createdAt"`
-	UpdatedAt           int64       `json:"updatedAt" bson:"updatedAt"`
+	Key                 string          `json:"key" bson:"_id"`
+	Source              BookSource      `json:"source" bson:"source"`
+	ProbeTarget         ProbeTarget     `json:"probeTarget" bson:"probeTarget"`
+	Status              string          `json:"status" bson:"status"`
+	ProbeCount          int             `json:"probeCount" bson:"probeCount"`
+	FailureCount        int             `json:"failureCount" bson:"failureCount"`
+	ConsecutiveFailures int             `json:"consecutiveFailures" bson:"consecutiveFailures"`
+	LastProbeAt         int64           `json:"lastProbeAt" bson:"lastProbeAt"`
+	LastSuccessAt       int64           `json:"lastSuccessAt" bson:"lastSuccessAt"`
+	LastFailureAt       int64           `json:"lastFailureAt" bson:"lastFailureAt"`
+	AbnormalSince       int64           `json:"abnormalSince" bson:"abnormalSince"`
+	NextProbeAt         int64           `json:"nextProbeAt" bson:"nextProbeAt"`
+	DisabledAt          int64           `json:"disabledAt,omitempty" bson:"disabledAt,omitempty"`
+	DisabledReason      string          `json:"disabledReason,omitempty" bson:"disabledReason,omitempty"`
+	LastProbe           ProbeResult     `json:"lastProbe" bson:"lastProbe"`
+	Origins             []string        `json:"origins" bson:"origins"`
+	CreatedAt           int64           `json:"createdAt" bson:"createdAt"`
+	UpdatedAt           int64           `json:"updatedAt" bson:"updatedAt"`
+	Versions            []SourceVersion `json:"versions,omitempty" bson:"versions,omitempty"`
 }
 
 type SourcePool struct {
@@ -69,6 +71,18 @@ func (pool *SourcePool) AddOrUpdate(source BookSource, origin string, now time.T
 	if entry == nil {
 		pool.Entries[key] = &PoolEntry{Key: key, Source: source, ProbeTarget: probeTarget, Status: SourceStatusNew, NextProbeAt: nowUnix, Origins: []string{origin}, CreatedAt: nowUnix, UpdatedAt: nowUnix}
 		return true
+	}
+	// Check if this is a different version (rules changed)
+	oldHash := sourceContentHash(entry.Source)
+	newHash := sourceContentHash(source)
+	if oldHash != "" && newHash != "" && oldHash != newHash {
+		// Store the existing source version before replacing
+		entry.Versions = append(entry.Versions, SourceVersion{
+			ContentHash: oldHash,
+			Source:      entry.Source,
+			AddedAt:     nowUnix,
+			Tag:         "previous",
+		})
 	}
 	entry.Source = chooseRepresentative([]BookSource{entry.Source, source})
 	entry.ProbeTarget = ProbeTargetFromBookSource(entry.Source)
@@ -166,17 +180,57 @@ func (pool *SourcePool) nextFailureDelay(entry *PoolEntry, now time.Time) time.D
 }
 
 func (pool *SourcePool) UsableSources() []BookSource {
-	usable := []BookSource{}
+	type sortEntry struct {
+		source  BookSource
+		success int
+		avgMS   int64
+		order   int // 0=normal, 1=comic, 2=audio
+	}
+	entries := []sortEntry{}
 	for _, entry := range pool.Entries {
 		if entry.Status == SourceStatusUsable && !shouldExcludeBookSource(entry.Source) {
-			usable = append(usable, cleanBookSourceName(entry.Source))
+			source := cleanBookSourceName(entry.Source)
+			nameText := strings.ToLower(stringField(source, "bookSourceName"))
+			srcType := stringField(source, "bookSourceType")
+			order := 0
+			if srcType == "2" || containsAny(nameText, []string{"漫画", "漫蛙", "comic", "manga", "manhua"}) {
+				order = 1
+			} else if srcType == "1" || containsAny(nameText, []string{"听书", "有声", "audio"}) {
+				order = 2
+			}
+			avgMS := successfulSampleAvgMS(entry.LastProbe)
+			entries = append(entries, sortEntry{
+				source:  source,
+				success: entry.LastProbe.SampleSuccesses,
+				avgMS:   avgMS,
+				order:   order,
+			})
 		}
 	}
-	sort.Slice(usable, func(i, j int) bool {
-		left := stringField(usable[i], "bookSourceName") + stringField(usable[i], "bookSourceUrl")
-		right := stringField(usable[j], "bookSourceName") + stringField(usable[j], "bookSourceUrl")
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].order != entries[j].order {
+			return entries[i].order < entries[j].order
+		}
+		if entries[i].success != entries[j].success {
+			return entries[i].success > entries[j].success
+		}
+		if entries[i].avgMS != entries[j].avgMS {
+			if entries[i].avgMS == 0 {
+				return false
+			}
+			if entries[j].avgMS == 0 {
+				return true
+			}
+			return entries[i].avgMS < entries[j].avgMS
+		}
+		left := stringField(entries[i].source, "bookSourceName") + stringField(entries[i].source, "bookSourceUrl")
+		right := stringField(entries[j].source, "bookSourceName") + stringField(entries[j].source, "bookSourceUrl")
 		return left < right
 	})
+	usable := make([]BookSource, len(entries))
+	for i, e := range entries {
+		usable[i] = e.source
+	}
 	return usable
 }
 

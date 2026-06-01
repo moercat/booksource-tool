@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"sort"
 	"strings"
@@ -28,6 +29,10 @@ func quality(source BookSource) int {
 		if stringField(rule, "bookUrl") != "" {
 			q++
 		}
+	}
+	// Prefer more recent versions
+	if t := int64Field(source, "lastUpdateTime"); t > 0 {
+		q += 10 // give recency significant weight
 	}
 	return q
 }
@@ -66,4 +71,18 @@ func fileSHA1(path string) (string, error) {
 		return "", err
 	}
 	return sha1Hex(string(data)), nil
+}
+
+func sourceContentHash(source BookSource) string {
+	parts := []string{}
+	for _, key := range []string{"ruleSearch", "ruleBookInfo", "ruleToc", "ruleContent", "ruleExplore", "searchUrl"} {
+		if v, ok := source[key]; ok {
+			data, _ := json.Marshal(v)
+			parts = append(parts, string(data))
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return sha1Hex(strings.Join(parts, "\x00"))
 }

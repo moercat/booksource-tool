@@ -36,6 +36,7 @@ type ProbeResult struct {
 	SampleSuccesses int                 `json:"sampleSuccesses,omitempty" bson:"sampleSuccesses,omitempty"`
 	SampleKeywords  []string            `json:"sampleKeywords,omitempty" bson:"sampleKeywords,omitempty"`
 	SampleResults   []ProbeSampleResult `json:"sampleResults,omitempty" bson:"sampleResults,omitempty"`
+	rawBody         []byte              // response body, not persisted
 }
 
 type ProbeSampleResult struct {
@@ -56,6 +57,13 @@ type DuplicateGroup struct {
 	Count         int      `json:"count" bson:"count"`
 	Names         []string `json:"names" bson:"names"`
 	RawURLs       []string `json:"rawUrls" bson:"rawUrls"`
+}
+
+type SourceVersion struct {
+	ContentHash string     `json:"contentHash" bson:"contentHash"`
+	Source      BookSource `json:"source" bson:"source"`
+	AddedAt     int64      `json:"addedAt" bson:"addedAt"`
+	Tag         string     `json:"tag,omitempty" bson:"tag,omitempty"` // "good", "bad", "current"
 }
 
 type DedupDoc struct {

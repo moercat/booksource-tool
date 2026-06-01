@@ -8,7 +8,7 @@
   "outputDir": "/output",
   "interval": "5m",
   "remoteFetchInterval": "1h",
-  "usableProbeInterval": "1h",
+  "usableProbeInterval": "30m",
   "invalidProbeInterval": "24h",
   "maxConsecutiveFailures": 60,
   "maxRemoteItems": 10,
@@ -16,7 +16,7 @@
   "maxRemoteCollections": 1,
   "maxRemoteBackfillBookSources": 100,
   "maxRemoteBackfillCollections": 15,
-  "maxProbeJobsPerCycle": 120,
+  "maxProbeJobsPerCycle": 500,
   "searchKeywords": [
     "我",
     "大陆",
@@ -89,7 +89,7 @@
     "第一序列",
     "深空彼岸"
   ],
-  "workers": 80,
+  "workers": 200,
   "timeout": "5s",
   "retries": 3,
   "retryDelay": "500ms",
