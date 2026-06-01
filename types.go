@@ -168,18 +168,20 @@ type Config struct {
 	MongoURI       string        `json:"mongoURI"`
 	MongoDB        string        `json:"mongoDB"`
 
-	RemoteFetchInterval      time.Duration `json:"-"`
-	RemoteFetchIntervalText  string        `json:"remoteFetchInterval"`
-	UsableProbeInterval      time.Duration `json:"-"`
-	UsableProbeIntervalText  string        `json:"usableProbeInterval"`
-	InvalidProbeInterval     time.Duration `json:"-"`
-	InvalidProbeIntervalText string        `json:"invalidProbeInterval"`
-	MaxConsecutiveFailures   int           `json:"maxConsecutiveFailures"`
-	MaxRemoteItems           int           `json:"maxRemoteItems"`
-	MaxRemoteBookSources     int           `json:"maxRemoteBookSources"`
-	MaxRemoteCollections     int           `json:"maxRemoteCollections"`
-	MaxProbeJobsPerCycle     int           `json:"maxProbeJobsPerCycle"`
-	SearchKeywords           []string      `json:"searchKeywords"`
+	RemoteFetchInterval          time.Duration `json:"-"`
+	RemoteFetchIntervalText      string        `json:"remoteFetchInterval"`
+	UsableProbeInterval          time.Duration `json:"-"`
+	UsableProbeIntervalText      string        `json:"usableProbeInterval"`
+	InvalidProbeInterval         time.Duration `json:"-"`
+	InvalidProbeIntervalText     string        `json:"invalidProbeInterval"`
+	MaxConsecutiveFailures       int           `json:"maxConsecutiveFailures"`
+	MaxRemoteItems               int           `json:"maxRemoteItems"`
+	MaxRemoteBookSources         int           `json:"maxRemoteBookSources"`
+	MaxRemoteCollections         int           `json:"maxRemoteCollections"`
+	MaxRemoteBackfillBookSources int           `json:"maxRemoteBackfillBookSources"`
+	MaxRemoteBackfillCollections int           `json:"maxRemoteBackfillCollections"`
+	MaxProbeJobsPerCycle         int           `json:"maxProbeJobsPerCycle"`
+	SearchKeywords               []string      `json:"searchKeywords"`
 }
 
 func (cfg Config) withDefaults() Config {
@@ -221,6 +223,12 @@ func (cfg Config) withDefaults() Config {
 	}
 	if cfg.MaxRemoteCollections <= 0 {
 		cfg.MaxRemoteCollections = 1
+	}
+	if cfg.MaxRemoteBackfillBookSources <= 0 {
+		cfg.MaxRemoteBackfillBookSources = 100
+	}
+	if cfg.MaxRemoteBackfillCollections <= 0 {
+		cfg.MaxRemoteBackfillCollections = 15
 	}
 	if cfg.MaxProbeJobsPerCycle <= 0 {
 		cfg.MaxProbeJobsPerCycle = 120

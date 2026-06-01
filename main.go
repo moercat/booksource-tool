@@ -44,13 +44,15 @@ func parseFlags() Config {
 	timeout := flag.Float64("timeout", 5, "per-request timeout seconds")
 	retries := flag.Int("retries", 3, "probe attempts per source; non-200 or network errors are retried")
 	retryDelay := flag.Float64("retry-delay", 0.5, "delay between probe retries in seconds")
-	remoteFetchInterval := flag.Float64("remote-fetch-interval", 900, "remote listing fetch interval seconds")
+	remoteFetchInterval := flag.Float64("remote-fetch-interval", 3600, "remote listing fetch interval seconds")
 	usableProbeInterval := flag.Float64("usable-probe-interval", 3600, "probe interval seconds for usable sources")
 	invalidProbeInterval := flag.Float64("invalid-probe-interval", 86400, "base probe interval seconds for unusable sources")
 	maxConsecutiveFailures := flag.Int("max-consecutive-failures", 60, "disable probing after this many consecutive failures and long abnormal duration")
 	maxRemoteItems := flag.Int("max-remote-items", 10, "maximum JSON items to fetch from each remote listing page per cycle")
-	maxRemoteBookSources := flag.Int("max-remote-book-sources", 20, "maximum latest individual book sources to fetch per cycle")
+	maxRemoteBookSources := flag.Int("max-remote-book-sources", 10, "maximum latest individual book sources to fetch per cycle")
 	maxRemoteCollections := flag.Int("max-remote-collections", 1, "maximum latest source collections to fetch per cycle")
+	maxRemoteBackfillBookSources := flag.Int("max-remote-backfill-book-sources", 100, "maximum historical individual book source JSON URLs to backfill before only checking latest entries")
+	maxRemoteBackfillCollections := flag.Int("max-remote-backfill-collections", 15, "maximum historical source collection JSON URLs to backfill before only checking latest entries")
 	maxProbeJobsPerCycle := flag.Int("max-probe-jobs-per-cycle", 120, "maximum due sources to probe in each scheduler cycle")
 	searchKeywords := flag.String("search-keywords", "", "comma-separated search keywords for quality sampling")
 	publishTarget := flag.String("publish-target", "", "optional scp/rsync target for usable JSON, e.g. root@8.135.16.113:/opt/filedown/var/legado-usable-book-sources.json")
@@ -112,6 +114,12 @@ func parseFlags() Config {
 	}
 	if flagWasSet("max-remote-collections") {
 		cfg.MaxRemoteCollections = *maxRemoteCollections
+	}
+	if flagWasSet("max-remote-backfill-book-sources") {
+		cfg.MaxRemoteBackfillBookSources = *maxRemoteBackfillBookSources
+	}
+	if flagWasSet("max-remote-backfill-collections") {
+		cfg.MaxRemoteBackfillCollections = *maxRemoteBackfillCollections
 	}
 	if flagWasSet("max-probe-jobs-per-cycle") {
 		cfg.MaxProbeJobsPerCycle = *maxProbeJobsPerCycle
