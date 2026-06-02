@@ -176,7 +176,7 @@ func (pool *SourcePool) nextFailureDelay(entry *PoolEntry, now time.Time) time.D
 	if abnormalFor >= 7*24*time.Hour && entry.ConsecutiveFailures >= 7 {
 		return 3 * 24 * time.Hour
 	}
-	return pool.Config.InvalidProbeInterval
+	return pool.Config.UsableProbeInterval
 }
 
 func (pool *SourcePool) UsableSources() []BookSource {

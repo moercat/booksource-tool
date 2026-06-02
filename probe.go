@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
@@ -15,6 +14,8 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
 )
 
 func ProbeAll(probeTargets map[string]ProbeTarget, workers int, timeout time.Duration, retries int, retryDelay time.Duration) map[string]ProbeResult {
@@ -73,11 +74,12 @@ func ProbeWithSource(target ProbeTarget, source BookSource, previous ProbeResult
 func probeRandomKeywordSearch(source BookSource, previous ProbeResult, timeout time.Duration, retries int, retryDelay time.Duration) ProbeResult {
 	keywords := searchKeywords(source)
 	result := previous
+	// 重置 SampleTotal 为实际唯一关键词数（清除旧版本虚增）
+	result.SampleTotal = len(result.SampleKeywords)
 
-	// Probe 3 keywords per cycle to speed up first pass
-	probesPerCycle := 3
+	probesPerCycle := 10
 	if len(previous.SampleKeywords) >= len(keywords) {
-		probesPerCycle = 1 // all tested, maintenance mode
+		probesPerCycle = 1
 	}
 
 	var bestDetail ProbeResult
@@ -266,6 +268,7 @@ func probeOnce(target ProbeTarget, source BookSource, timeout time.Duration) Pro
 	result.Status, result.FinalURL = resp.StatusCode, resp.Request.URL.String()
 	result.BodyBytes = len(data)
 	result.ChineseChars = countChineseChars(data)
+	result.rawBody = data
 	if resp.StatusCode == http.StatusOK {
 		validation := validateSearchResponse(source, data, time.Since(started).Milliseconds())
 		result.ValidationLevel = validation.Level
@@ -293,78 +296,9 @@ func probeOnce(target ProbeTarget, source BookSource, timeout time.Duration) Pro
 						detailRes := probeWithRetries(ProbeTarget{URL: detailURL, Method: "GET"}, nil, timeout, 1, 0)
 						result.DetailOK = detailRes.OK
 
-						// Try to find content using source's own rules
+						// Find chapter link from detail page: first try source rules, fall back to heuristic
 						if detailRes.OK && len(detailRes.rawBody) > 200 {
-							ruleBookInfo, _ := source["ruleBookInfo"].(map[string]any)
-							ruleToc, _ := source["ruleToc"].(map[string]any)
-
-							// Determine TOC URL: from ruleBookInfo.tocUrl or use detail URL
-							tocURL := ""
-							tocRule := strings.TrimSpace(stringField(ruleBookInfo, "tocUrl"))
-							if tocRule != "" && !strings.HasPrefix(tocRule, "@js:") && !strings.HasPrefix(tocRule, "<js>") {
-								if strings.HasPrefix(tocRule, "http") {
-									tocURL = tocRule
-								} else {
-									// CSS selector to extract tocUrl from detail page
-									detailDoc, docErr := goquery.NewDocumentFromReader(strings.NewReader(string(detailRes.rawBody)))
-									if docErr == nil {
-										tocURL = extractHTMLField(detailDoc.Selection, tocRule)
-									}
-								}
-							}
-							if tocURL == "" {
-								tocURL = detailURL
-							} else {
-								tocURL = resolveURL(tocURL, detailURL)
-							}
-
-							// Fetch TOC page and try to extract first chapter
-							chapterListRule := strings.TrimSpace(stringField(ruleToc, "chapterList"))
-							chapterURLRule := strings.TrimSpace(stringField(ruleToc, "chapterUrl"))
-							if chapterListRule != "" && !strings.HasPrefix(chapterListRule, "@js:") && !strings.HasPrefix(chapterListRule, "<js>") {
-								tocRes := probeWithRetries(ProbeTarget{URL: tocURL, Method: "GET"}, nil, timeout, 1, 0)
-								if tocRes.OK && len(tocRes.rawBody) > 200 {
-									isJSON := jsonLooksValid(string(tocRes.rawBody))
-									if isJSON && strings.HasPrefix(chapterListRule, "$") {
-										// JSON path - extract first chapter
-										var root any
-										if json.Unmarshal(tocRes.rawBody, &root) == nil {
-											items := resolveJSONPath(root, chapterListRule)
-											if len(items) > 0 {
-												if m, ok := items[0].(map[string]any); ok {
-													if chapterURLRule != "" && strings.HasPrefix(chapterURLRule, "$") {
-														cu := resolveJSONString(m, chapterURLRule)
-														if cu != "" {
-															fullCU := resolveURL(cu, tocURL)
-															if fullCU != "" {
-																cr := probeWithRetries(ProbeTarget{URL: fullCU, Method: "GET"}, nil, timeout, 1, 0)
-																result.ContentOK = cr.OK && len(cr.rawBody) > 500
-															}
-														}
-													}
-												}
-											}
-										}
-									} else {
-										// HTML - use CSS selector
-										doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(tocRes.rawBody)))
-										if err == nil {
-											sel := doc.Find(cssSelectorFromRule(chapterListRule))
-											if sel.Length() > 0 {
-												firstItem := sel.First()
-												chapterURL := extractHTMLField(firstItem, chapterURLRule)
-												if chapterURL != "" {
-													fullCU := resolveURL(chapterURL, tocURL)
-													if fullCU != "" {
-														cr := probeWithRetries(ProbeTarget{URL: fullCU, Method: "GET"}, nil, timeout, 1, 0)
-														result.ContentOK = cr.OK && len(cr.rawBody) > 500
-													}
-												}
-											}
-										}
-									}
-								}
-							}
+							result.ContentOK = verifyContentFromDetail(detailRes.rawBody, detailURL, source, timeout)
 						}
 					}
 				}
@@ -418,47 +352,157 @@ func resolveURL(rawURL, baseURL string) string {
 }
 
 func countChineseChars(data []byte) int {
+	// Try UTF-8 first
+	text := string(data)
 	count := 0
-	for _, b := range string(data) {
-		if b >= 0x4E00 && b <= 0x9FFF {
+	for _, r := range text {
+		if r >= 0x4E00 && r <= 0x9FFF {
 			count++
+		}
+	}
+	if count > 0 {
+		return count
+	}
+	// Fallback: try GBK decoding (common for Chinese novel sites without charset header)
+	decoder := simplifiedchinese.GBK.NewDecoder()
+	decoded, err := io.ReadAll(transform.NewReader(bytes.NewReader(data), decoder))
+	if err == nil {
+		for _, r := range string(decoded) {
+			if r >= 0x4E00 && r <= 0x9FFF {
+				count++
+			}
 		}
 	}
 	return count
 }
 
-func findContentURL(body []byte) string {
-	text := string(body)
-	// Skip non-content file extensions
-	skipExt := func(u string) bool {
-		for _, ext := range []string{".css", ".js", ".png", ".jpg", ".gif", ".svg", ".ico", ".woff", ".ttf"} {
-			if strings.HasSuffix(u, ext) {
+func verifyContentFromDetail(detailBody []byte, detailURL string, source BookSource, timeout time.Duration) bool {
+	detailHTML := string(detailBody)
+
+	// Try source's ruleToc CSS selectors first
+	ruleToc, hasToc := source["ruleToc"].(map[string]any)
+	if hasToc {
+		chapterList := strings.TrimSpace(stringField(ruleToc, "chapterList"))
+		if chapterList != "" && !strings.HasPrefix(chapterList, "@js:") && !strings.HasPrefix(chapterList, "<js>") {
+			doc, err := goquery.NewDocumentFromReader(strings.NewReader(detailHTML))
+			if err == nil {
+				sel := doc.Find(cssSelectorFromRule(chapterList))
+				if sel.Length() > 0 {
+					chapterURLRule := strings.TrimSpace(stringField(ruleToc, "chapterUrl"))
+					firstItem := sel.First()
+					chapterURL := extractHTMLField(firstItem, chapterURLRule)
+					if chapterURL != "" {
+						fullURL := resolveURL(chapterURL, detailURL)
+						if fullURL != "" {
+							if fetchAndCheckContent(fullURL, source, timeout) {
+								return true
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback: heuristic patterns on detail page HTML
+	linkPat := regexp.MustCompile(`<a\s+[^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>`)
+	links := linkPat.FindAllStringSubmatch(detailHTML, -1)
+
+	navWords := []string{"首页", "分类", "排行", "书架", "返回", "登录", "注册", "上一页", "下一页"}
+	isNav := func(text, href string) bool {
+		for _, w := range navWords {
+			if strings.Contains(text, w) || strings.Contains(href, w) {
 				return true
 			}
 		}
 		return false
 	}
 
-	// Look for chapter-like URLs
-	re := regexp.MustCompile(`href=["']([^"']+)["']`)
-	for _, m := range re.FindAllStringSubmatch(text, -1) {
-		u := m[1]
-		if skipExt(u) {
-			continue
-		}
-		if strings.Contains(u, "search") || strings.Contains(u, "login") || strings.HasPrefix(u, "#") || strings.HasPrefix(u, "javascript") {
-			continue
-		}
-		// Prefer URLs with chapter indicators
-		if strings.Contains(u, "chapter") || strings.Contains(u, "read") || strings.Contains(u, "/book/") || strings.Contains(u, "/novel/") {
-			if strings.Count(u, "/") >= 2 {
-				return u
+	// Pattern 1: "开始阅读" link
+	for _, m := range links {
+		href := m[1]
+		text := stripTagsRegex(m[2])
+		if strings.Contains(text, "开始") || strings.Contains(text, "阅读") {
+			if !strings.HasPrefix(href, "javascript") && !strings.HasPrefix(href, "#") && href != "" {
+				fullURL := resolveURL(href, detailURL)
+				if fullURL != "" && fetchAndCheckContent(fullURL, source, timeout) {
+					return true
+				}
 			}
 		}
-		// Or URLs ending with .html and not looking like a category page
-		if strings.HasSuffix(u, ".html") && strings.Count(u, "/") >= 2 && !strings.Contains(u, "list") && !strings.Contains(u, "index") {
-			return u
+	}
+
+	// Pattern 2: "第X章" links
+	for _, m := range links {
+		href := m[1]
+		text := stripTagsRegex(m[2])
+		if strings.Contains(text, "第") && (strings.Contains(text, "章") || strings.Contains(text, "节") || strings.Contains(text, "回")) {
+			if isNav(text, href) || strings.HasPrefix(href, "javascript") || strings.HasPrefix(href, "#") {
+				continue
+			}
+			fullURL := resolveURL(href, detailURL)
+			if fullURL != "" && fetchAndCheckContent(fullURL, source, timeout) {
+				return true
+			}
 		}
 	}
-	return ""
+
+	// Pattern 3: /数字/数字/数字.html chapter link pattern
+	for _, m := range links {
+		href := m[1]
+		text := stripTagsRegex(m[2])
+		if isNav(text, href) || strings.HasPrefix(href, "javascript") || strings.HasPrefix(href, "#") {
+			continue
+		}
+		if regexp.MustCompile(`/\d+[/_]\d+/\d+\.html`).MatchString(href) {
+			fullURL := resolveURL(href, detailURL)
+			if fullURL != "" && fetchAndCheckContent(fullURL, source, timeout) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func fetchAndCheckContent(url string, source BookSource, timeout time.Duration) bool {
+	cr := probeWithRetries(ProbeTarget{URL: url, Method: "GET"}, nil, timeout, 1, 0)
+	if !cr.OK || len(cr.rawBody) < 200 {
+		return false
+	}
+
+	bodyStr := string(cr.rawBody)
+
+	// Try ruleContent.content CSS selector first
+	ruleContent, hasContent := source["ruleContent"].(map[string]any)
+	if hasContent {
+		contentRule := strings.TrimSpace(stringField(ruleContent, "content"))
+		if contentRule != "" && !strings.HasPrefix(contentRule, "@js:") && !strings.HasPrefix(contentRule, "<js>") {
+			doc, err := goquery.NewDocumentFromReader(strings.NewReader(bodyStr))
+			if err == nil {
+				sel := doc.Find(cssSelectorFromRule(contentRule))
+				if sel.Length() > 0 {
+					cn := countChineseCharsInString(sel.Text())
+					return cn > 200
+				}
+			}
+		}
+	}
+
+	// Fallback: 全文中文数足够就算可读
+	return countChineseChars(cr.rawBody) > 500
+}
+
+func countChineseCharsInString(s string) int {
+	count := 0
+	for _, r := range s {
+		if r >= 0x4E00 && r <= 0x9FFF {
+			count++
+		}
+	}
+	return count
+}
+
+func stripTagsRegex(s string) string {
+	return strings.TrimSpace(regexp.MustCompile(`<[^>]+>`).ReplaceAllString(s, ""))
 }

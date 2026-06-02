@@ -26,7 +26,7 @@ func fetchRemoteSources(ctx context.Context, cfg Config) ([]BookSource, error) {
 	all := []BookSource{}
 	state, stateErr := loadRemoteFetchState(cfg)
 	if stateErr != nil {
-		fmt.Printf("remote fetch state load failed: %v\n", stateErr)
+		logf("remote fetch state load failed: %v\n", stateErr)
 	}
 	totalListings := 0
 	failedListings := 0
@@ -40,8 +40,8 @@ func fetchRemoteSources(ctx context.Context, cfg Config) ([]BookSource, error) {
 		discoveredJSONURLs, err := discoverYCKJSONURLs(ctx, listingURL)
 		if err != nil {
 			failedListings++
-			fmt.Printf("remote listing failed kind=%s url=%s error=%v\n", kind, listingURL, err)
-			fmt.Printf("remote fetch summary listings=%d failedListings=%d discoveredJSON=%d selectedJSON=%d successJSON=%d skippedJSON=%d skippedSeenJSON=%d sources=%d\n", totalListings, failedListings, totalJSON+len(discoveredJSONURLs), totalJSON, successJSON, skippedJSON, skippedSeenJSON, len(all))
+			logf("remote listing failed kind=%s url=%s error=%v\n", kind, listingURL, err)
+			logf("remote fetch summary listings=%d failedListings=%d discoveredJSON=%d selectedJSON=%d successJSON=%d skippedJSON=%d skippedSeenJSON=%d sources=%d\n", totalListings, failedListings, totalJSON+len(discoveredJSONURLs), totalJSON, successJSON, skippedJSON, skippedSeenJSON, len(all))
 			return all, err
 		}
 		jsonURLs, listingSkippedSeen, listingFetchedBefore, listingBackfillDone := selectNewRemoteJSONURLs(state, listingURL, discoveredJSONURLs, remoteLimitForURL(cfg, listingURL), remoteBackfillLimitForURL(cfg, listingURL))
@@ -56,7 +56,7 @@ func fetchRemoteSources(ctx context.Context, cfg Config) ([]BookSource, error) {
 			if err != nil {
 				skippedJSON++
 				listingSkippedJSON++
-				fmt.Printf("remote source skipped %s: %v\n", jsonURL, err)
+				logf("remote source skipped %s: %v\n", jsonURL, err)
 				continue
 			}
 			successJSON++
@@ -64,12 +64,12 @@ func fetchRemoteSources(ctx context.Context, cfg Config) ([]BookSource, error) {
 			listingSources += len(sources)
 			all = append(all, sources...)
 		}
-		fmt.Printf("remote listing summary kind=%s url=%s discoveredJSON=%d selectedJSON=%d skippedSeenJSON=%d fetchedBefore=%d backfillLimit=%d backfillDone=%t successJSON=%d skippedJSON=%d sources=%d\n", kind, listingURL, len(discoveredJSONURLs), len(jsonURLs), listingSkippedSeen, listingFetchedBefore, remoteBackfillLimitForURL(cfg, listingURL), listingBackfillDone, listingSuccessJSON, listingSkippedJSON, listingSources)
+		logf("remote listing summary kind=%s url=%s discoveredJSON=%d selectedJSON=%d skippedSeenJSON=%d fetchedBefore=%d backfillLimit=%d backfillDone=%t successJSON=%d skippedJSON=%d sources=%d\n", kind, listingURL, len(discoveredJSONURLs), len(jsonURLs), listingSkippedSeen, listingFetchedBefore, remoteBackfillLimitForURL(cfg, listingURL), listingBackfillDone, listingSuccessJSON, listingSkippedJSON, listingSources)
 	}
 	if err := saveRemoteFetchState(cfg, state); err != nil {
-		fmt.Printf("remote fetch state save failed: %v\n", err)
+		logf("remote fetch state save failed: %v\n", err)
 	}
-	fmt.Printf("remote fetch summary listings=%d failedListings=%d selectedJSON=%d successJSON=%d skippedJSON=%d skippedSeenJSON=%d sources=%d\n", totalListings, failedListings, totalJSON, successJSON, skippedJSON, skippedSeenJSON, len(all))
+	logf("remote fetch summary listings=%d failedListings=%d selectedJSON=%d successJSON=%d skippedJSON=%d skippedSeenJSON=%d sources=%d\n", totalListings, failedListings, totalJSON, successJSON, skippedJSON, skippedSeenJSON, len(all))
 	return all, nil
 }
 

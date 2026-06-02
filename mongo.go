@@ -132,7 +132,7 @@ func restorePoolFromMongo(cfg Config, pool *SourcePool) error {
 			entry.ProbeTarget = ProbeTargetFromBookSource(entry.Source)
 		}
 		entry.Source = cleanBookSourceName(entry.Source)
-		if entry.NextProbeAt == 0 && entry.Status != SourceStatusDisabled {
+		if entry.Status != SourceStatusDisabled {
 			entry.NextProbeAt = time.Now().Unix()
 		}
 		pool.Entries[entry.Key] = &entry

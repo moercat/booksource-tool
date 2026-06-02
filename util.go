@@ -4,10 +4,17 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"sort"
 	"strings"
+	"time"
 )
+
+func logf(format string, args ...interface{}) {
+	now := time.Now().In(time.FixedZone("CST", 8*3600))
+	fmt.Fprintf(os.Stderr, now.Format("15:04:05")+" "+format, args...)
+}
 
 func chooseRepresentative(items []BookSource) BookSource {
 	sort.SliceStable(items, func(i, j int) bool { return quality(items[i]) > quality(items[j]) })

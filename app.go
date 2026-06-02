@@ -17,6 +17,8 @@ import (
 
 func run(cfg Config) error {
 	setDefaultSearchKeywords(cfg.SearchKeywords)
+	logf("config loaded: keywords=%d workers=%d timeout=%v interval=%v\n",
+		len(cfg.SearchKeywords), cfg.Workers, cfg.Timeout, cfg.Interval)
 	if cfg.WatchDir != "" {
 		return runWatch(cfg)
 	}
@@ -39,22 +41,25 @@ func runWatch(cfg Config) error {
 	ctx := context.Background()
 	pool := NewSourcePool(cfg)
 	if err := restorePoolFromMongo(cfg, pool); err != nil {
-		fmt.Fprintf(os.Stderr, "restore pool failed: %v\n", err)
+		logf("restore pool failed: %v\n", err)
 	}
 	lastOutputHash, _ := fileSHA1(filepath.Join(cfg.OutputDir, "usable_dedup_sources.json"))
 	nextRemoteFetch := time.Time{}
 	for {
-		started := time.Now()
 		if err := runSchedulerCycle(ctx, cfg, pool, &nextRemoteFetch, &lastOutputHash); err != nil {
-			fmt.Fprintf(os.Stderr, "[%s] run failed: %v\n", started.Format(time.RFC3339), err)
+			logf("run failed: %v\n", err)
 		} else {
-			fmt.Fprintf(os.Stderr, "[%s] run completed\n", started.Format(time.RFC3339))
+			logf("run completed\n")
 		}
 		time.Sleep(cfg.Interval)
 	}
 }
 
 func runSchedulerCycle(ctx context.Context, cfg Config, pool *SourcePool, nextRemoteFetch *time.Time, lastOutputHash *string) error {
+	// 每轮重新加载配置（关键词热更新等）
+	if reloaded := reloadConfig(&cfg); reloaded {
+		setDefaultSearchKeywords(cfg.SearchKeywords)
+	}
 	now := time.Now()
 	if poolHasNoSources(pool) || !now.Before(*nextRemoteFetch) {
 		sources := []BookSource{}
@@ -71,13 +76,13 @@ func runSchedulerCycle(ctx context.Context, cfg Config, pool *SourcePool, nextRe
 		sources = append(sources, historical...)
 		remoteSources, err := fetchRemoteSources(ctx, cfg)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "remote fetch failed: %v\n", err)
+			logf("remote fetch failed: %v\n", err)
 		} else {
 			sources = append(sources, remoteSources...)
 		}
 		sources = uniqueBookSources(sources)
 		added := pool.MergeSources(sources, "scheduler", now)
-		fmt.Fprintf(os.Stderr, "source pool refreshed: input=%d added=%d pool=%d\n", len(sources), added, len(pool.Entries))
+		logf("source pool refreshed: input=%d added=%d pool=%d\n", len(sources), added, len(pool.Entries))
 		*nextRemoteFetch = now.Add(cfg.RemoteFetchInterval)
 	}
 
@@ -87,7 +92,7 @@ func runSchedulerCycle(ctx context.Context, cfg Config, pool *SourcePool, nextRe
 		for key, result := range probeResults {
 			pool.RecordProbe(key, result, time.Now())
 		}
-		fmt.Fprintf(os.Stderr, "probe completed: due=%d\n", len(dueJobs))
+		logf("probe completed: due=%d\n", len(dueJobs))
 	}
 
 	usablePath := filepath.Join(cfg.OutputDir, "usable_dedup_sources.json")
@@ -105,7 +110,7 @@ func runSchedulerCycle(ctx context.Context, cfg Config, pool *SourcePool, nextRe
 			return err
 		}
 		*lastOutputHash = outputHash
-		fmt.Fprintf(os.Stderr, "usable output changed: count=%d hash=%s\n", len(usable), outputHash)
+		logf("usable output changed: count=%d hash=%s\n", len(usable), outputHash)
 	}
 	probeValues := poolProbeValues(pool)
 	if err := writeJSON(connectivityPath, probeValues); err != nil {
@@ -431,6 +436,23 @@ func errorCounts(results map[string]ProbeResult) map[string]int {
 		}
 	}
 	return out
+}
+
+func reloadConfig(cfg *Config) bool {
+	if cfg == nil {
+		return false
+	}
+	updated := loadConfigFile("etc/config.json")
+	if len(updated.SearchKeywords) == 0 {
+		return false
+	}
+	old := cfg.SearchKeywords
+	cfg.SearchKeywords = updated.SearchKeywords
+	if strings.Join(old, ",") != strings.Join(cfg.SearchKeywords, ",") {
+		logf("config reloaded: keywords %d -> %d\n", len(old), len(cfg.SearchKeywords))
+		return true
+	}
+	return false
 }
 
 func writeJSON(path string, value any) error {
