@@ -71,7 +71,7 @@ docker compose run --rm cleaner --input /data/shareBookSource.json \
   --retries 3 \
   --mongo-uri mongodb://127.0.0.1:27018 \
   --mongo-db booksource_tool \
-  --publish-target root@8.135.16.113:/opt/filedown/var/legado-usable-book-sources.json
+  --publish-target user@your-server-ip:/opt/filedown/var/legado-usable-book-sources.json
 ```
 
 行为：
@@ -87,7 +87,7 @@ docker compose run --rm cleaner --input /data/shareBookSource.json \
 网络导入地址保持：
 
 ```text
-http://8.135.16.113/var/legado-usable-book-sources.json
+http://your-server.example.com/var/legado-usable-book-sources.json
 ```
 
 ## 输出
@@ -105,9 +105,9 @@ http://8.135.16.113/var/legado-usable-book-sources.json
 
 公开文件：
 
-- `http://8.135.16.113/var/legado-usable-book-sources.json`：兼容原导入地址。
-- `http://8.135.16.113/var/legado-all-usable-book-sources.json`：全量可用源导入地址，内容与当前主输出一致。
-- `http://8.135.16.113/var/legado-app-usability-report.json`：全量源 App 可用性风险报告。
+- `http://your-server.example.com/var/legado-usable-book-sources.json`：兼容原导入地址。
+- `http://your-server.example.com/var/legado-all-usable-book-sources.json`：全量可用源导入地址，内容与当前主输出一致。
+- `http://your-server.example.com/var/legado-app-usability-report.json`：全量源 App 可用性风险报告。
 
 ## Mongo 集合
 

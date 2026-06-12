@@ -55,7 +55,7 @@ func parseFlags() Config {
 	maxRemoteBackfillCollections := flag.Int("max-remote-backfill-collections", 15, "maximum historical source collection JSON URLs to backfill before only checking latest entries")
 	maxProbeJobsPerCycle := flag.Int("max-probe-jobs-per-cycle", 120, "maximum due sources to probe in each scheduler cycle")
 	searchKeywords := flag.String("search-keywords", "", "comma-separated search keywords for quality sampling")
-	publishTarget := flag.String("publish-target", "", "optional scp/rsync target for usable JSON, e.g. root@8.135.16.113:/opt/filedown/var/legado-usable-book-sources.json")
+	publishTarget := flag.String("publish-target", "", "optional scp/rsync target for usable JSON, e.g. user@your-server-ip:/opt/filedown/var/legado-usable-book-sources.json")
 	mongoURI := flag.String("mongo-uri", "", "optional MongoDB URI for caching results")
 	mongoDB := flag.String("mongo-db", "booksource_tool", "MongoDB database name")
 	flag.Parse()

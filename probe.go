@@ -66,9 +66,28 @@ func Probe(target ProbeTarget, timeout time.Duration, retries int, retryDelay ti
 
 func ProbeWithSource(target ProbeTarget, source BookSource, previous ProbeResult, timeout time.Duration, retries int, retryDelay time.Duration) ProbeResult {
 	if len(source) > 0 {
-		return probeRandomKeywordSearch(source, previous, timeout, retries, retryDelay)
+		return probeLiveness(source, timeout, retries, retryDelay)
 	}
 	return probeWithRetries(target, source, timeout, retries, retryDelay)
+}
+
+func probeLiveness(source BookSource, timeout time.Duration, retries int, retryDelay time.Duration) ProbeResult {
+	keywords := searchKeywords(source)
+	keyword := "我"
+	if len(keywords) > 0 {
+		keyword = keywords[0]
+	}
+	target := ProbeTargetFromBookSourceKeyword(source, keyword)
+	if target.URL == "" {
+		return ProbeResult{Keyword: keyword, Error: "empty probe target"}
+	}
+	res := probeWithRetries(target, source, timeout, retries, retryDelay)
+	res.Keyword = keyword
+	if res.OK {
+		res.SampleTotal = 1
+		res.SampleSuccesses = 1
+	}
+	return res
 }
 
 func probeRandomKeywordSearch(source BookSource, previous ProbeResult, timeout time.Duration, retries int, retryDelay time.Duration) ProbeResult {

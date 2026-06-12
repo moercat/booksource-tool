@@ -72,22 +72,11 @@ func (pool *SourcePool) AddOrUpdate(source BookSource, origin string, now time.T
 		pool.Entries[key] = &PoolEntry{Key: key, Source: source, ProbeTarget: probeTarget, Status: SourceStatusNew, NextProbeAt: nowUnix, Origins: []string{origin}, CreatedAt: nowUnix, UpdatedAt: nowUnix}
 		return true
 	}
-	// Check if this is a different version (rules changed)
-	oldHash := sourceContentHash(entry.Source)
-	newHash := sourceContentHash(source)
-	if oldHash != "" && newHash != "" && oldHash != newHash {
-		// Store the existing source version before replacing
-		entry.Versions = append(entry.Versions, SourceVersion{
-			ContentHash: oldHash,
-			Source:      entry.Source,
-			AddedAt:     nowUnix,
-			Tag:         "previous",
-		})
-	}
 	entry.Source = chooseRepresentative([]BookSource{entry.Source, source})
 	entry.ProbeTarget = ProbeTargetFromBookSource(entry.Source)
 	entry.Origins = appendUnique(entry.Origins, origin)
 	entry.UpdatedAt = nowUnix
+	entry.Versions = nil
 	if entry.Status == SourceStatusDisabled {
 		entry.Status = SourceStatusNew
 		entry.DisabledAt = 0
@@ -131,7 +120,7 @@ func (pool *SourcePool) RecordProbe(key string, result ProbeResult, now time.Tim
 	}
 	nowUnix := now.Unix()
 	entry.ProbeCount++
-	entry.LastProbe = result
+	entry.LastProbe = compactProbeResult(result)
 	entry.LastProbeAt = nowUnix
 	entry.UpdatedAt = nowUnix
 	if result.OK {
@@ -176,7 +165,7 @@ func (pool *SourcePool) nextFailureDelay(entry *PoolEntry, now time.Time) time.D
 	if abnormalFor >= 7*24*time.Hour && entry.ConsecutiveFailures >= 7 {
 		return 3 * 24 * time.Hour
 	}
-	return pool.Config.UsableProbeInterval
+	return pool.Config.InvalidProbeInterval
 }
 
 func (pool *SourcePool) UsableSources() []BookSource {
@@ -253,6 +242,26 @@ func stableJSONHash(value any) (string, []byte, error) {
 		return "", nil, err
 	}
 	return sha1Hex(string(data)), data, nil
+}
+
+func compactProbeResult(result ProbeResult) ProbeResult {
+	result.rawBody = nil
+	result.Body = ""
+	result.SampleKeywords = nil
+	result.SampleResults = nil
+	result.SampleTotal = 0
+	result.SampleSuccesses = 0
+	result.ExtractedName = ""
+	result.ExtractedAuthor = ""
+	result.ExtractedLastChapter = ""
+	result.ExtractedKind = ""
+	result.ExtractedWords = ""
+	result.DetailOK = false
+	result.ContentOK = false
+	if len(result.ValidationNotes) > 1 {
+		result.ValidationNotes = result.ValidationNotes[:1]
+	}
+	return result
 }
 
 func appendUnique(values []string, value string) []string {

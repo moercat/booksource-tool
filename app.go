@@ -69,11 +69,6 @@ func runSchedulerCycle(ctx context.Context, cfg Config, pool *SourcePool, nextRe
 			return err
 		}
 		sources = append(sources, localSources...)
-		historical, err := loadHistoricalSourcesFromMongo(cfg)
-		if err != nil {
-			return err
-		}
-		sources = append(sources, historical...)
 		remoteSources, err := fetchRemoteSources(ctx, cfg)
 		if err != nil {
 			logf("remote fetch failed: %v\n", err)
@@ -96,10 +91,6 @@ func runSchedulerCycle(ctx context.Context, cfg Config, pool *SourcePool, nextRe
 	}
 
 	usablePath := filepath.Join(cfg.OutputDir, "usable_dedup_sources.json")
-	duplicatePath := filepath.Join(cfg.OutputDir, "duplicate_report.json")
-	connectivityPath := filepath.Join(cfg.OutputDir, "connectivity_report.json")
-	appUsabilityPath := filepath.Join(cfg.OutputDir, "app_usability_report.json")
-	summaryPath := filepath.Join(cfg.OutputDir, "summary.json")
 	usable := pool.UsableSources()
 	outputHash, usableJSON, err := stableJSONHash(usable)
 	if err != nil {
@@ -112,27 +103,7 @@ func runSchedulerCycle(ctx context.Context, cfg Config, pool *SourcePool, nextRe
 		*lastOutputHash = outputHash
 		logf("usable output changed: count=%d hash=%s\n", len(usable), outputHash)
 	}
-	probeValues := poolProbeValues(pool)
-	if err := writeJSON(connectivityPath, probeValues); err != nil {
-		return err
-	}
-	appUsabilityItems := []AppUsabilityReportItem{}
-	for _, entry := range pool.Entries {
-		if entry.Status == SourceStatusUsable && !shouldExcludeBookSource(entry.Source) {
-			appUsabilityItems = append(appUsabilityItems, appUsabilityItem(cleanBookSourceName(entry.Source), entry.LastProbe, true))
-		}
-	}
-	if err := writeJSON(appUsabilityPath, buildAppUsabilityReport(appUsabilityItems)); err != nil {
-		return err
-	}
-	duplicates := poolDuplicateGroups()
-	if err := writeJSON(duplicatePath, duplicates); err != nil {
-		return err
-	}
-	summary := pool.Summary(outputHash, map[string]string{"usable": usablePath, "duplicates": duplicatePath, "connectivity": connectivityPath, "appUsability": appUsabilityPath, "summary": summaryPath})
-	if err := writeJSON(summaryPath, summary); err != nil {
-		return err
-	}
+	summary := pool.Summary(outputHash, map[string]string{"usable": usablePath})
 	if err := persistPoolToMongo(cfg, pool, summary); err != nil {
 		return err
 	}
@@ -145,7 +116,7 @@ func poolProbeValues(pool *SourcePool) []ProbeResult {
 	results := []ProbeResult{}
 	for _, entry := range pool.Entries {
 		if entry.LastProbeAt > 0 {
-			results = append(results, entry.LastProbe)
+			results = append(results, compactProbeResult(entry.LastProbe))
 		}
 	}
 	sort.Slice(results, func(i, j int) bool { return results[i].ProbeURL < results[j].ProbeURL })
@@ -218,20 +189,7 @@ func runOnce(cfg Config) error {
 		return err
 	}
 	usablePath := filepath.Join(cfg.OutputDir, "usable_dedup_sources.json")
-	duplicatePath := filepath.Join(cfg.OutputDir, "duplicate_report.json")
-	connectivityPath := filepath.Join(cfg.OutputDir, "connectivity_report.json")
-	appUsabilityPath := filepath.Join(cfg.OutputDir, "app_usability_report.json")
-	summaryPath := filepath.Join(cfg.OutputDir, "summary.json")
 	if err := writeJSON(usablePath, usable); err != nil {
-		return err
-	}
-	if err := writeJSON(duplicatePath, duplicates); err != nil {
-		return err
-	}
-	if err := writeJSON(connectivityPath, values(probeResults)); err != nil {
-		return err
-	}
-	if err := writeJSON(appUsabilityPath, buildAppUsabilityReport(appUsabilityItems)); err != nil {
 		return err
 	}
 
@@ -246,11 +204,8 @@ func runOnce(cfg Config) error {
 		FailedUniqueURLs:      len(groups) - len(usable),
 		StatusCounts:          statusCounts(probeResults),
 		ErrorCounts:           errorCounts(probeResults),
-		Outputs:               map[string]string{"usable": usablePath, "duplicates": duplicatePath, "connectivity": connectivityPath, "appUsability": appUsabilityPath, "summary": summaryPath},
+		Outputs:               map[string]string{"usable": usablePath},
 		UpdatedAt:             time.Now().Unix(),
-	}
-	if err := writeJSON(summaryPath, summary); err != nil {
-		return err
 	}
 	if cfg.MongoURI != "" {
 		if err := cacheToMongo(cfg, sources, groups, probeResults, duplicates, summary); err != nil {

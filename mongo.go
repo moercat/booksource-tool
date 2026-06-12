@@ -132,8 +132,10 @@ func restorePoolFromMongo(cfg Config, pool *SourcePool) error {
 			entry.ProbeTarget = ProbeTargetFromBookSource(entry.Source)
 		}
 		entry.Source = cleanBookSourceName(entry.Source)
-		if entry.Status != SourceStatusDisabled {
-			entry.NextProbeAt = time.Now().Unix()
+		entry.LastProbe = compactProbeResult(entry.LastProbe)
+		entry.Versions = nil
+		if entry.Status != SourceStatusDisabled && entry.NextProbeAt == 0 {
+			entry.NextProbeAt = defaultNextProbeAt(entry.Status, time.Now(), cfg)
 		}
 		pool.Entries[entry.Key] = &entry
 	}
@@ -152,18 +154,34 @@ func persistPoolToMongo(cfg Config, pool *SourcePool, summary Summary) error {
 	_, _ = db.Collection("source_files").UpdateOne(ctx, bson.M{"_id": "source-pool"}, bson.M{"$set": summary}, options.Update().SetUpsert(true))
 	_, _ = db.Collection("usable_sources").DeleteMany(ctx, bson.M{})
 	for key, entry := range pool.Entries {
-		_, _ = db.Collection("dedup_sources").UpdateOne(ctx, bson.M{"_id": key}, bson.M{"$set": entry}, options.Update().SetUpsert(true))
+		persisted := *entry
+		persisted.LastProbe = compactProbeResult(persisted.LastProbe)
+		persisted.Versions = nil
+		_, _ = db.Collection("dedup_sources").UpdateOne(ctx, bson.M{"_id": key}, bson.M{"$set": persisted}, options.Update().SetUpsert(true))
 		if entry.LastProbeAt > 0 {
-			_, _ = db.Collection("connectivity_cache").UpdateOne(ctx, bson.M{"_id": key}, bson.M{"$set": bson.M{"probeUrl": entry.LastProbe.ProbeURL, "keyword": entry.LastProbe.Keyword, "method": entry.LastProbe.Method, "body": entry.LastProbe.Body, "domain": entry.LastProbe.Domain, "ok": entry.LastProbe.OK, "status": entry.LastProbe.Status, "finalUrl": entry.LastProbe.FinalURL, "error": entry.LastProbe.Error, "ms": entry.LastProbe.MS, "attempts": entry.LastProbe.Attempts, "bodyBytes": entry.LastProbe.BodyBytes, "validationLevel": entry.LastProbe.ValidationLevel, "validationGrade": entry.LastProbe.ValidationGrade, "validationNotes": entry.LastProbe.ValidationNotes, "sampleTotal": entry.LastProbe.SampleTotal, "sampleSuccesses": entry.LastProbe.SampleSuccesses, "sampleKeywords": entry.LastProbe.SampleKeywords, "sampleResults": entry.LastProbe.SampleResults, "updatedAt": time.Now().Unix()}}, options.Update().SetUpsert(true))
+			probe := compactProbeResult(entry.LastProbe)
+			_, _ = db.Collection("connectivity_cache").UpdateOne(ctx, bson.M{"_id": key}, bson.M{"$set": bson.M{"probeUrl": probe.ProbeURL, "keyword": probe.Keyword, "method": probe.Method, "body": probe.Body, "domain": probe.Domain, "ok": probe.OK, "status": probe.Status, "finalUrl": probe.FinalURL, "error": probe.Error, "ms": probe.MS, "attempts": probe.Attempts, "bodyBytes": probe.BodyBytes, "validationLevel": probe.ValidationLevel, "validationGrade": probe.ValidationGrade, "validationNotes": probe.ValidationNotes, "sampleTotal": probe.SampleTotal, "sampleSuccesses": probe.SampleSuccesses, "sampleKeywords": probe.SampleKeywords, "sampleResults": probe.SampleResults, "updatedAt": time.Now().Unix()}}, options.Update().SetUpsert(true))
 		}
 		if entry.Status == SourceStatusUsable && !shouldExcludeBookSource(entry.Source) {
-			_, _ = db.Collection("usable_sources").UpdateOne(ctx, bson.M{"_id": key}, bson.M{"$set": bson.M{"normalizedUrl": key, "probeUrl": entry.LastProbe.ProbeURL, "keyword": entry.LastProbe.Keyword, "method": entry.LastProbe.Method, "body": entry.LastProbe.Body, "domain": entry.LastProbe.Domain, "ok": true, "status": entry.LastProbe.Status, "finalUrl": entry.LastProbe.FinalURL, "error": entry.LastProbe.Error, "ms": entry.LastProbe.MS, "attempts": entry.LastProbe.Attempts, "bodyBytes": entry.LastProbe.BodyBytes, "validationLevel": entry.LastProbe.ValidationLevel, "validationGrade": entry.LastProbe.ValidationGrade, "validationNotes": entry.LastProbe.ValidationNotes, "sampleTotal": entry.LastProbe.SampleTotal, "sampleSuccesses": entry.LastProbe.SampleSuccesses, "sampleKeywords": entry.LastProbe.SampleKeywords, "sampleResults": entry.LastProbe.SampleResults, "source": entry.Source, "updatedAt": time.Now().Unix()}}, options.Update().SetUpsert(true))
+			probe := compactProbeResult(entry.LastProbe)
+			_, _ = db.Collection("usable_sources").UpdateOne(ctx, bson.M{"_id": key}, bson.M{"$set": bson.M{"normalizedUrl": key, "probeUrl": probe.ProbeURL, "keyword": probe.Keyword, "method": probe.Method, "body": probe.Body, "domain": probe.Domain, "ok": true, "status": probe.Status, "finalUrl": probe.FinalURL, "error": probe.Error, "ms": probe.MS, "attempts": probe.Attempts, "bodyBytes": probe.BodyBytes, "validationLevel": probe.ValidationLevel, "validationGrade": probe.ValidationGrade, "validationNotes": probe.ValidationNotes, "sampleTotal": probe.SampleTotal, "sampleSuccesses": probe.SampleSuccesses, "sampleKeywords": probe.SampleKeywords, "sampleResults": probe.SampleResults, "source": entry.Source, "updatedAt": time.Now().Unix()}}, options.Update().SetUpsert(true))
 		}
 	}
 	for _, spec := range []struct{ col, key string }{{"dedup_sources", "status"}, {"dedup_sources", "nextProbeAt"}, {"dedup_sources", "domain"}, {"connectivity_cache", "domain"}, {"usable_sources", "domain"}} {
 		_, _ = db.Collection(spec.col).Indexes().CreateOne(ctx, mongo.IndexModel{Keys: bson.D{{Key: spec.key, Value: 1}}})
 	}
 	return nil
+}
+
+func defaultNextProbeAt(status string, now time.Time, cfg Config) int64 {
+	switch status {
+	case SourceStatusUsable:
+		return now.Add(jitter(cfg.UsableProbeInterval, status)).Unix()
+	case SourceStatusAbnormal, SourceStatusNew:
+		return now.Add(jitter(cfg.InvalidProbeInterval, status)).Unix()
+	default:
+		return now.Unix()
+	}
 }
 
 func sourceFileLabel(cfg Config) string {
