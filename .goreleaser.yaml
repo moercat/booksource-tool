@@ -1,0 +1,110 @@
+# booksource-tool goreleaser 配置
+# 用法：
+#   goreleaser release --snapshot --clean   本地试发布
+#   git tag v1.0.0 && git push --tags        触发 GitHub Actions 自动发布
+
+project_name: booksource-tool
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: booksource-tool
+    main: ./
+    binary: booksource-tool
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: booksource-tool
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+      - zip
+    files:
+      - README.md
+      - LICENSE.md
+      - docker-compose.yml
+      - deploy/**/*
+      - scripts/**/*
+
+dockers:
+  - id: booksource-tool-amd64
+    use: buildx
+    goos: linux
+    goarch: amd64
+    dockerfile: Dockerfile
+    image_templates:
+      - "ghcr.io/moercat/booksource-tool:{{ .Version }}-amd64"
+      - "ghcr.io/moercat/booksource-tool:latest-amd64"
+    skip_push: false
+
+  - id: booksource-tool-arm64
+    use: buildx
+    goos: linux
+    goarch: arm64
+    dockerfile: Dockerfile
+    image_templates:
+      - "ghcr.io/moercat/booksource-tool:{{ .Version }}-arm64"
+      - "ghcr.io/moercat/booksource-tool:latest-arm64"
+    skip_push: false
+
+docker_manifests:
+  - name_template: "ghcr.io/moercat/booksource-tool:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/moercat/booksource-tool:{{ .Version }}-amd64"
+      - "ghcr.io/moercat/booksource-tool:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/moercat/booksource-tool:latest"
+    image_templates:
+      - "ghcr.io/moercat/booksource-tool:latest-amd64"
+      - "ghcr.io/moercat/booksource-tool:latest-arm64"
+
+release:
+  github:
+    owner: moercat
+    name: booksource-tool
+  prerelease: auto
+  draft: false
+  header: |
+    ## booksource-tool {{ .Tag }}
+
+    Legado 书源清理探测发布工具。
+    完整文档见 [README](https://github.com/moercat/booksource-tool#readme)。
+
+    ## Docker
+    ```bash
+    docker pull ghcr.io/moercat/booksource-tool:{{ .Version }}
+    ```
+  footer: |
+    **Full Changelog**: https://github.com/moercat/booksource-tool/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+changelog:
+  use: git
+  groups:
+    - title: Breaking Changes
+      regexp: '^.*!:\s.+$'
+      order: 0
+    - title: Features
+      regexp: '^.*feat(\(.+\))?\s*:\s.+$'
+      order: 1
+    - title: Bug Fixes
+      regexp: '^.*fix(\(.+\))?\s*:\s.+$'
+      order: 2
+    - title: Others
+      order: 999
+
+snapshot:
+  name_template: "{{ .Tag }}-next"
