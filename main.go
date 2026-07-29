@@ -32,6 +32,7 @@ func main() {
 
 func parseFlags() Config {
 	configPath := flag.String("config", "etc/config.json", "config file path")
+	daemon := flag.Bool("daemon", false, "run as daemon: continuously watch watch-dir for new sources (requires MongoDB)")
 	input := flag.String("input", "", "input Legado book source JSON array")
 	var sources sourceList
 	var remoteURLs sourceList
@@ -76,11 +77,21 @@ func parseFlags() Config {
 	if *watchDir != "" {
 		cfg.WatchDir = *watchDir
 	}
+	if cfg.WatchDir == "" {
+		if v := os.Getenv("WATCH_DIR"); v != "" {
+			cfg.WatchDir = v
+		}
+	}
 	if flagWasSet("interval") {
 		cfg.Interval = time.Duration(*interval * float64(time.Second))
 	}
 	if flagWasSet("output-dir") {
 		cfg.OutputDir = *outputDir
+	}
+	if cfg.OutputDir == "" || cfg.OutputDir == "output" {
+		if v := os.Getenv("OUTPUT_DIR"); v != "" {
+			cfg.OutputDir = v
+		}
 	}
 	if flagWasSet("workers") {
 		cfg.Workers = *workers
@@ -124,6 +135,18 @@ func parseFlags() Config {
 	if flagWasSet("max-probe-jobs-per-cycle") {
 		cfg.MaxProbeJobsPerCycle = *maxProbeJobsPerCycle
 	}
+	// --daemon 模式等同于 --watch-dir 当前 INBOX_DIR（默认值）
+	if *daemon {
+		if v := os.Getenv("WATCH_DIR"); v != "" && !flagWasSet("watch-dir") {
+			cfg.WatchDir = v
+		}
+		if cfg.WatchDir == "" {
+			cfg.WatchDir = "/data/inbox"
+		}
+		if v := os.Getenv("MONGO_URI"); v != "" && !flagWasSet("mongo-uri") {
+			cfg.MongoURI = v
+		}
+	}
 	if flagWasSet("search-keywords") {
 		cfg.SearchKeywords = splitCSV(*searchKeywords)
 	}
@@ -132,6 +155,11 @@ func parseFlags() Config {
 	}
 	if *mongoURI != "" {
 		cfg.MongoURI = *mongoURI
+	}
+	if cfg.MongoURI == "" {
+		if v := os.Getenv("MONGO_URI"); v != "" {
+			cfg.MongoURI = v
+		}
 	}
 	if flagWasSet("mongo-db") {
 		cfg.MongoDB = *mongoDB

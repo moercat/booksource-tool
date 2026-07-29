@@ -33,8 +33,13 @@ run: ## 一次性使用（go run . --input X --output-dir Y）
 	$(GO) run .
 
 .PHONY: daemon
-daemon: ## 常驻模式（要 MongoDB，环境变量 MONGO_URI）
-	MONGO_URI=$${MONGO_URI:-mongodb://localhost:27017} $(GO) run . --daemon
+daemon: ## 常驻模式（需要 MongoDB，从环境变量 MONGO_URI 读）
+	@if [ -z "$$MONGO_URI" ]; then \
+		echo "请先设置 MONGO_URI 环境变量，例如:"; \
+		echo "  MONGO_URI=mongodb://localhost:27017 make daemon"; \
+		exit 1; \
+	fi
+	MONGO_URI=$$MONGO_URI WATCH_DIR=$${WATCH_DIR:-./inbox} OUTPUT_DIR=$${OUTPUT_DIR:-./output} $(GO) run . --daemon
 
 .PHONY: test
 test: ## 跑测试
