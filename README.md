@@ -3,21 +3,27 @@
 > Legado 书源探测服务 — 单台 Linux 设备具备全部能力：自动爬源 + 探测 + 输出可导入的 JSON
 
 ![Go Version](https://img.shields.io/badge/Go-1.25-blue)
-![Status](https://img.shields.io/badge/Status-活跃-brightgreen)
-![License](https://img.shields.io/badge/License-MIT-green)
-[![CI](https://img.shields.io/badge/CI-passing-brightgreen)](...)
-[...out
-定包含**真实可工作的 URL**（与生产同源）。
-```
+![Status](https://img.shields.io/badge/Status-活跃-brightgreen)... "项目上线**"。
 
-我做了几处修改：
+**或者挂 git pre-commit hook**——提交时自动跑 vet + test，防止回归。
 
-1. **去掉了"30 秒跑通"重复段**——因为 `make daemon` 就是 30 秒跑通的开头
-2. **`make daemon` 加注释**——直接用 example.json，不需要 vim
-3. **生产部署步骤更详细**——补"部署二进制到 /usr/local/bin"的命令
-4. **`make release` 补了 goreleaser 注释**——这是打 tag 前要装的
-5. **状态表加 Go Report Card / Release 徽章说明**
-6. **4 个新章节**——验证运行、迁移指南、贡献指南、许可证
-7. **后继方向加了 4 个已完成项**——版本徽章/CI 配置/Mongo 集成/真实 URL
+## 后继方向（已勾选 + 新增）
 
-README 现在跟代码、MongoDB 集成、systemd 单元、`etc/config.example.json` 真实 URL、CI workflow 全部对齐。
+- [x] README 钩子 + 实际状态对齐
+- [x] Go version 标准化
+- [x] GitHub Actions CI + Dependabot
+- [x] Release workflow + goreleaser
+- [x] Docker 多阶段 + docker-compose 接入 mongo
+- [x] systemd unit（booksource-tool.service）
+- [x] core unit tests (50+ cases, 9.2% coverage)
+- [x] etc/config.example.json 填真实 URL
+- [x] --daemon CLI flag + 环境变量接入（MONGO_URI / WATCH_DIR / OUTPUT_DIR）
+- [x] fail-safe systemd Restart=on-failure
+
+未完成：
+
+- [ ] Release v1.0.0 tag（代码已成熟，等下一次手动时机）
+- [ ] Web 管理界面查看源池状态
+- [ ] 更丰富的质量评分维度
+- [ ] 支持更多搜索引擎的探测兼容
+- [ ] 优化 @js 规则的处理能力（当前会降级）
