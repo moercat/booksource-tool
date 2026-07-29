@@ -1,14 +1,47 @@
+# booksource-tool docker-compose
+# 一键启动 MongoDB + booksource-tool
+# 用法：cp etc/config.example.json etc/config.local.json && docker compose up -d
+
 services:
   booksource-tool:
     build: .
-    image: booksource-cleaner:latest
+    image: booksource-tool:latest
     container_name: booksource-tool
     restart: unless-stopped
-    command: ["--config", "/app/etc/config.json"]
-    network_mode: host
-    mem_limit: 1g
-    cpus: "0.8"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      - MONGO_URI=mongodb://mongo:27017
+      - WATCH_DIR=/data/inbox
+      - OUTPUT_DIR=/output
+    command: ["--config", "/app/etc/config.local.json"]
     volumes:
       - ./inbox:/data/inbox
       - ./output:/output
       - ./etc:/app/etc:ro
+    mem_limit: 1g
+    cpus: "0.8"
+    networks:
+      - booksource-net
+
+  mongo:
+    image: mongo:6
+    container_name: booksource-mongo
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - booksource-net
+
+volumes:
+  mongo_data:
+
+networks:
+  booksource-net:
+    driver: bridge

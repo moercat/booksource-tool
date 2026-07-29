@@ -1,0 +1,42 @@
+[Unit]
+Description=booksource-tool: Legado book source discovery + probe
+Documentation=https://github.com/moercat/booksource-tool
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=booksource
+Group=booksource
+WorkingDirectory=/opt/booksource-tool
+
+# 二进制路径
+ExecStart=/usr/local/bin/booksource-tool --config /opt/booksource-tool/etc/config.local.json
+
+# 自动重启（生产推荐 always，简单场景 on-failure）
+Restart=always
+RestartSec=10
+
+# 日志
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=booksource-tool
+
+# 资源限制
+MemoryMax=1G
+CPUQuota=80%
+
+# 安全加固（生产推荐）
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/booksource-tool/output /opt/booksource-tool/inbox
+
+# 环境变量（覆盖 daemon 模式默认值）
+Environment=MONGO_URI=mongodb://127.0.0.1:27017
+Environment=WATCH_DIR=/opt/booksource-tool/inbox
+Environment=OUTPUT_DIR=/opt/booksource-tool/output
+
+[Install]
+WantedBy=multi-user.target
