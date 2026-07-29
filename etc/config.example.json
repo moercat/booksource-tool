@@ -2,13 +2,12 @@
   "watchDir": "/data/inbox",
   "sources": [],
   "remoteUrls": [
-    "https://your-domain.example/yuedu/shuyuan/index.html",
-    "https://your-domain.example/yuedu/shuyuan/index.html",
+    "https://www.yck2026.top/yuedu/shuyuan/index.html",
+    "https://www.yck2026.top/yuedu/shuyuans/index.html"
   ],
   "outputDir": "/output",
   "interval": "5m",
   "remoteFetchInterval": "6h",
-  "usableProbeInterval": "360h",
   "invalidProbeInterval": "168h",
   "maxConsecutiveFailures": 60,
   "maxRemoteItems": 10,
