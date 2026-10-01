@@ -4,7 +4,8 @@ go 1.25.0
 
 require (
 	github.com/PuerkitoBio/goquery v1.12.0
-	go.mongodb.org/mongo-driver v1.17.4
+	go.mongodb.org/mongo-driver v1.17.10
+	golang.org/x/text v0.35.0
 )
 
 require (
@@ -19,5 +20,4 @@ require (
 	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/text v0.35.0 // indirect
 )
